@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { AccountArea } from './components/account/AccountArea'
 import { EmptyState, ErrorState, LoadingState } from './components/StatusStates'
 import { GraphSummary } from './components/GraphSummary'
 import { GraphExplorer } from './components/graphView/GraphExplorer'
@@ -7,12 +8,15 @@ import { ResultsSummary } from './components/ResultsSummary'
 import { runSearch } from './lib/searchController'
 import { usePapersStore } from './store/papersStore'
 import { useGraphStore } from './store/graphStore'
+import { useActiveProjectStore } from './store/activeProjectStore'
 
 function App() {
   const [topic, setTopic] = useState('')
   const [isTableExpanded, setIsTableExpanded] = useState(false)
-  const { status, query, papers, fetchedCount, targetCount, error, fetchedAt } = usePapersStore()
+  const { status, query, papers, fetchedCount, targetCount, error, fetchedAt, source } =
+    usePapersStore()
   const graph = useGraphStore()
+  const activeProject = useActiveProjectStore()
   const isLoading = status === 'loading'
 
   function handleSubmit(event: FormEvent) {
@@ -20,13 +24,23 @@ function App() {
     runSearch(topic)
   }
 
+  async function handleRetry() {
+    if (source.type === 'project') {
+      const { openSavedProject } = await import('./lib/projectController')
+      await openSavedProject(source.uid, source.pid)
+    } else {
+      runSearch(query)
+    }
+  }
+
   return (
     <div className="flex min-h-screen flex-col items-center bg-white">
       <header className="w-full border-b border-slate-200">
-        <div className="mx-auto max-w-5xl px-6 py-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <span className="text-lg font-semibold text-slate-900">
             CiteScape
           </span>
+          <AccountArea />
         </div>
       </header>
 
@@ -71,9 +85,7 @@ function App() {
           {status === 'loading' && (
             <LoadingState fetchedCount={fetchedCount} targetCount={targetCount} />
           )}
-          {status === 'error' && (
-            <ErrorState message={error} onRetry={() => runSearch(query)} />
-          )}
+          {status === 'error' && <ErrorState message={error} onRetry={handleRetry} />}
           {status === 'empty' && <EmptyState query={query} />}
           {status === 'success' && (
             <div className="flex flex-col gap-6 text-left">
@@ -100,6 +112,7 @@ function App() {
                     query={query}
                     papers={papers}
                     fetchedAt={fetchedAt}
+                    initialView={activeProject.initialView ?? undefined}
                   />
                 </>
               )}

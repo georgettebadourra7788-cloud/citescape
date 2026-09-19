@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { isPro } from '../../lib/entitlements'
 import type { ExportContext } from '../../lib/export/exportContext'
+import type { ExportNetworkKind } from '../../lib/export/filename'
 import type { NetworkResult } from '../../lib/graph/types'
 import type { NetworkSigma } from './NetworkGraph'
 
@@ -8,6 +9,7 @@ interface ExportMenuProps {
   context: ExportContext
   activeNetwork: NetworkResult
   activeNetworkLabel: string
+  networkKind: ExportNetworkKind
   unitLabel: 'papers' | 'works'
   minLinkStrength: number
   sigma: NetworkSigma | null
@@ -17,6 +19,7 @@ export function ExportMenu({
   context,
   activeNetwork,
   activeNetworkLabel,
+  networkKind,
   unitLabel,
   minLinkStrength,
   sigma,
@@ -55,6 +58,7 @@ export function ExportMenu({
           await exportPng(
             { sigma, clusters: activeNetwork.clusters, unitLabel, title, watermark: !isPro },
             context.query,
+            networkKind,
           )
         }),
     },
@@ -67,12 +71,13 @@ export function ExportMenu({
           exportSvg(
             { network: activeNetwork, unitLabel, minLinkStrength, title, watermark: !isPro },
             context.query,
+            networkKind,
           )
         }),
     },
     {
       label: 'Excel workbook (.xlsx)',
-      description: 'Papers, clusters, edges, About',
+      description: 'Papers, clusters, edges, About — both networks',
       onClick: () =>
         runExport('Excel workbook', async () => {
           const { exportExcelWorkbook } = await import('../../lib/export/excelExport')
@@ -85,7 +90,7 @@ export function ExportMenu({
       onClick: () =>
         runExport('GEXF', async () => {
           const { exportGexf } = await import('../../lib/export/gexfExport')
-          exportGexf(activeNetwork, context.query, activeNetworkLabel)
+          exportGexf(activeNetwork, context.query, activeNetworkLabel, networkKind)
         }),
     },
     {
@@ -94,7 +99,7 @@ export function ExportMenu({
       onClick: () =>
         runExport('Pajek', async () => {
           const { exportPajek } = await import('../../lib/export/pajekExport')
-          exportPajek(activeNetwork, context.query)
+          exportPajek(activeNetwork, context.query, networkKind)
         }),
     },
   ]

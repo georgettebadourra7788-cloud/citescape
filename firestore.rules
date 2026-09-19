@@ -1,0 +1,89 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // entitlements/{uid} is set by hand in the Firebase console (see
+    // src/lib/entitlements.ts on the client) — never client-writable, so a
+    // user can never grant themselves Pro.
+    match /entitlements/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    function entitlementData(uid) {
+      let path = /databases/$(database)/documents/entitlements/$(uid);
+      return exists(path) ? get(path).data : null;
+    }
+
+    // A missing entitlement, or an expired pro/team one, both fall back to
+    // the free cap — mirrors effectiveEntitlement() in entitlementLogic.ts.
+    function isActivePro(uid) {
+      let ent = entitlementData(uid);
+      return ent != null
+        && (ent.plan == 'pro' || ent.plan == 'team')
+        && (!('expiresAt' in ent) || ent.expiresAt == null || ent.expiresAt > request.time);
+    }
+
+    function projectCap(uid) {
+      return isActivePro(uid) ? 200 : 3;
+    }
+
+    // No client-writable counter: the cap is enforced purely from the
+    // fixed slot number in the document ID itself ("p1".."pN"), so a user
+    // can never bypass it by resetting a counter doc they control.
+    function isValidSlotId(uid, pid) {
+      return pid.matches('^p[1-9][0-9]*$') && int(pid[1:]) <= projectCap(uid);
+    }
+
+    function hasValidProjectFields(data) {
+      return data.keys().hasOnly(
+          ['name', 'query', 'dateFetched', 'createdAt', 'updatedAt',
+           'workIds', 'excludedIds', 'settings', 'clusterLabels'])
+        && data.keys().hasAll(
+          ['name', 'query', 'dateFetched', 'createdAt', 'updatedAt',
+           'workIds', 'excludedIds', 'settings', 'clusterLabels'])
+        && data.name is string && data.name.size() < 120
+        && data.query is string
+        && data.dateFetched is timestamp
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.workIds is list && data.workIds.size() <= 5000
+        && data.excludedIds is list && data.excludedIds.size() <= 5000
+        && data.settings is map
+        && data.clusterLabels is map;
+    }
+
+    match /users/{uid}/projects/{pid} {
+      allow read: if isOwner(uid);
+
+      allow create: if isOwner(uid)
+        && isValidSlotId(uid, pid)
+        && hasValidProjectFields(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      // createdAt is immutable; renaming/re-saving only ever touches the
+      // other fields and must re-stamp updatedAt to "now".
+      allow update: if isOwner(uid)
+        && hasValidProjectFields(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if isOwner(uid);
+    }
+
+    // Deny everything else by default (no other collections are used).
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

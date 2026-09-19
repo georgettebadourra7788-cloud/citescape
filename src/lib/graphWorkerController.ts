@@ -1,5 +1,5 @@
 import { setGraphState } from '../store/graphStore'
-import type { BuildGraphsRequest, GraphWorkerMessage } from './graph/types'
+import type { BuildGraphsRequest, GraphBuildOptions, GraphWorkerMessage } from './graph/types'
 import type { Paper } from './openalex'
 
 const mailto = import.meta.env.VITE_OPENALEX_MAILTO as string | undefined
@@ -11,8 +11,19 @@ function finish(worker: Worker): void {
   if (activeWorker === worker) activeWorker = null
 }
 
-/** Runs the graph-building worker over `papers`, streaming state into the graph store. */
-export function buildGraphs(papers: Paper[]): void {
+/**
+ * Runs the graph-building worker over `papers`, streaming state into the
+ * graph store. `thresholdOptions` lets a reopened saved project restore its
+ * original min-weight/max-node thresholds instead of the defaults a fresh
+ * search would use.
+ */
+export function buildGraphs(
+  papers: Paper[],
+  thresholdOptions: Pick<
+    GraphBuildOptions,
+    'minCouplingWeight' | 'minCoCitationWeight' | 'maxCoCitationNodes'
+  > = {},
+): void {
   activeWorker?.terminate()
   const worker = new Worker(new URL('../workers/graphWorker.ts', import.meta.url), {
     type: 'module',
@@ -47,6 +58,6 @@ export function buildGraphs(papers: Paper[]): void {
     finish(worker)
   }
 
-  const request: BuildGraphsRequest = { type: 'build', papers, options: { mailto } }
+  const request: BuildGraphsRequest = { type: 'build', papers, options: { mailto, ...thresholdOptions } }
   worker.postMessage(request)
 }

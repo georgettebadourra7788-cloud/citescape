@@ -2,13 +2,20 @@ import { drawOnCanvas } from '@sigma/export-image'
 import type Sigma from 'sigma'
 import { buildLegendEntries } from './legendEntries'
 import { triggerDownload } from './download'
-import { exportFilename } from './filename'
+import { exportFilename, type ExportNetworkKind } from './filename'
 import type { NetworkSigma } from '../../components/graphView/NetworkGraph'
 import type { ClusterSummary } from '../graph/types'
 
-const LEGEND_WIDTH = 320
+const LEGEND_WIDTH = 380
 const TITLE_HEIGHT = 56
 const RESOLUTION_SCALE = 2
+/**
+ * Wider than the live map's grid cell (250) so the export snapshot shows
+ * fewer, less crowded density-based labels alongside the forced ones —
+ * a rough collision-avoidance knob, since Sigma's density system has no
+ * literal "show at most N" setting.
+ */
+const EXPORT_LABEL_GRID_CELL_SIZE = 420
 
 export interface PngExportOptions {
   sigma: NetworkSigma
@@ -24,7 +31,11 @@ export interface PngExportOptions {
  * and watermark on top — Sigma only knows about the map itself, not the
  * React-rendered legend.
  */
-export async function exportPng(options: PngExportOptions, query: string): Promise<void> {
+export async function exportPng(
+  options: PngExportOptions,
+  query: string,
+  network: ExportNetworkKind,
+): Promise<void> {
   const { sigma, clusters, unitLabel, title, watermark } = options
   const container = sigma.getContainer()
 
@@ -34,6 +45,7 @@ export async function exportPng(options: PngExportOptions, query: string): Promi
   const mapCanvas = await drawOnCanvas(sigma as unknown as Sigma, {
     width: container.clientWidth * RESOLUTION_SCALE,
     height: container.clientHeight * RESOLUTION_SCALE,
+    sigmaSettings: { labelGridCellSize: EXPORT_LABEL_GRID_CELL_SIZE },
   })
 
   const titleHeightPx = TITLE_HEIGHT * RESOLUTION_SCALE
@@ -91,5 +103,5 @@ export async function exportPng(options: PngExportOptions, query: string): Promi
     outCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not generate PNG.'))), 'image/png')
   })
 
-  triggerDownload(blob, exportFilename(query, 'png'))
+  triggerDownload(blob, exportFilename(query, 'png', { network }))
 }

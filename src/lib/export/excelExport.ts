@@ -1,5 +1,11 @@
 import * as XLSX from 'xlsx'
-import { buildAboutRows, buildClustersRows, buildEdgesRows, buildPapersRows } from './excelRows'
+import {
+  buildAboutRows,
+  buildClustersRows,
+  buildCoCitationNodesRows,
+  buildEdgesRows,
+  buildPapersRows,
+} from './excelRows'
 import { triggerDownload } from './download'
 import { exportFilename } from './filename'
 import type { ExportContext } from './exportContext'
@@ -20,6 +26,11 @@ export function exportExcelWorkbook(context: ExportContext): void {
   )
   XLSX.utils.book_append_sheet(
     workbook,
+    XLSX.utils.json_to_sheet(buildCoCitationNodesRows(context)),
+    'Co-citation nodes',
+  )
+  XLSX.utils.book_append_sheet(
+    workbook,
     XLSX.utils.json_to_sheet(buildEdgesRows(context.coupling)),
     'Edges - Coupling',
   )
@@ -34,7 +45,11 @@ export function exportExcelWorkbook(context: ExportContext): void {
     'About',
   )
 
-  const bytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+  const bytes = XLSX.write(workbook, {
+    bookType: 'xlsx',
+    type: 'array',
+    compression: true,
+  }) as ArrayBuffer
   triggerDownload(
     new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     exportFilename(context.query, 'xlsx'),

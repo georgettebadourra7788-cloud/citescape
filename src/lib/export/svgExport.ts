@@ -3,16 +3,18 @@ import { clusterColor, OTHER_COLOR } from '../graph/clusterColors'
 import { nodeSize } from '../graph/nodeSize'
 import { buildLegendEntries } from './legendEntries'
 import { downloadText } from './download'
-import { exportFilename } from './filename'
+import { exportFilename, type ExportNetworkKind } from './filename'
 import { escapeXml, truncateTitle } from '../text'
 import type { NetworkResult } from '../graph/types'
 
 const MAP_SIZE = 1400
-const LEGEND_WIDTH = 320
+const LEGEND_WIDTH = 380
 const TITLE_HEIGHT = 56
 const EDGE_COLOR = '#64748b' // slate-500
 const LABEL_COLOR = '#0f172a' // slate-900
-const MAX_LABELS = 20 // more generous than on-screen, since this is a static print figure
+const LABEL_FONT_SIZE = 11
+/** One label per cluster's top item, but capped so the map doesn't get busy. */
+const MAX_LABELS = 12
 
 function fitTransform(nodes: { x: number; y: number }[], size: number, padding = 0.08) {
   const xs = nodes.map((n) => n.x)
@@ -29,6 +31,31 @@ function fitTransform(nodes: { x: number; y: number }[], size: number, padding =
     x: size / 2 + (x - cx) * scale,
     y: size / 2 + (y - cy) * scale,
   })
+}
+
+let measureCanvasContext: CanvasRenderingContext2D | null | undefined
+/** Real text metrics when a canvas is available (always true in-app); a rough estimate otherwise (e.g. tests). */
+function measureTextWidth(text: string, fontSize: number): number {
+  if (measureCanvasContext === undefined) {
+    measureCanvasContext =
+      typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d')
+  }
+  if (measureCanvasContext) {
+    measureCanvasContext.font = `${fontSize}px sans-serif`
+    return measureCanvasContext.measureText(text).width
+  }
+  return text.length * fontSize * 0.55
+}
+
+interface Box {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function boxesOverlap(a: Box, b: Box): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
 }
 
 export interface SvgExportOptions {
@@ -59,13 +86,6 @@ export function buildSvg({ network, unitLabel, minLinkStrength, title, watermark
   const transform = fitTransform(network.nodes, MAP_SIZE, 0.08)
   const maxRank = Math.max(0, ...network.nodes.map(citationRank))
 
-  const forcedLabelIds = new Set(
-    network.clusters
-      .slice(0, MAX_LABELS)
-      .map((c) => c.topPapers[0]?.id)
-      .filter((id): id is string => Boolean(id)),
-  )
-
   const visibleEdges = network.edges.filter((e) => e.weight >= minLinkStrength)
 
   const edgeShapes = visibleEdges
@@ -79,16 +99,47 @@ export function buildSvg({ network, unitLabel, minLinkStrength, title, watermark
     })
     .join('\n')
 
+  // Candidate labels: one per cluster's top item, biggest clusters first
+  // (network.clusters is already sorted that way, "Other" last). Greedily
+  // place up to MAX_LABELS, skipping any whose bounding box would collide
+  // with an already-placed label.
+  const nodeById = new Map(network.nodes.map((n) => [n.id, n]))
+  const placedBoxes: Box[] = []
+  const labelTextByNodeId = new Map<string, string>()
+  for (const cluster of network.clusters) {
+    if (labelTextByNodeId.size >= MAX_LABELS) break
+    const candidateId = cluster.topPapers[0]?.id
+    if (!candidateId) continue
+    const node = nodeById.get(candidateId)
+    if (!node || node.resolved === false) continue
+
+    const p = transform(node.x, node.y)
+    const r = nodeSize(citationRank(node), maxRank)
+    const text = truncateTitle(node.label, 60)
+    const textWidth = measureTextWidth(text, LABEL_FONT_SIZE)
+    const box: Box = {
+      x: p.x + r + 4,
+      y: p.y - LABEL_FONT_SIZE,
+      width: textWidth,
+      height: LABEL_FONT_SIZE * 1.3,
+    }
+    if (placedBoxes.some((placed) => boxesOverlap(placed, box))) continue
+
+    placedBoxes.push(box)
+    labelTextByNodeId.set(candidateId, text)
+  }
+
   const nodeShapes = network.nodes
     .map((node) => {
       const p = transform(node.x, node.y)
       const r = nodeSize(citationRank(node), maxRank)
       const fill = node.resolved === false ? OTHER_COLOR : clusterColor(node.cluster)
       const circle = `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${fill}" fill-opacity="0.85"/>`
-      if (node.resolved === false || !forcedLabelIds.has(node.id)) return circle
-      const label = escapeXml(truncateTitle(node.label, 60))
+      const labelText = labelTextByNodeId.get(node.id)
+      if (!labelText) return circle
+      const label = escapeXml(labelText)
       const text =
-        `<text x="${(p.x + r + 4).toFixed(1)}" y="${(p.y + 4).toFixed(1)}" font-size="11" font-family="sans-serif" ` +
+        `<text x="${(p.x + r + 4).toFixed(1)}" y="${(p.y + 4).toFixed(1)}" font-size="${LABEL_FONT_SIZE}" font-family="sans-serif" ` +
         `fill="${LABEL_COLOR}" stroke="#ffffff" stroke-width="3" paint-order="stroke fill">${label}</text>`
       return circle + '\n' + text
     })
@@ -136,7 +187,7 @@ function svgDocument(width: number, height: number, elements: string[]): string 
   )
 }
 
-export function exportSvg(options: SvgExportOptions, query: string): void {
+export function exportSvg(options: SvgExportOptions, query: string, network: ExportNetworkKind): void {
   const svg = buildSvg(options)
-  downloadText(svg, exportFilename(query, 'svg'), 'image/svg+xml')
+  downloadText(svg, exportFilename(query, 'svg', { network }), 'image/svg+xml')
 }

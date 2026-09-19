@@ -1,5 +1,8 @@
 import type { Paper } from '../openalex'
 
+/** Which of the two networks is on screen — shared by the UI and saved-project settings. */
+export type NetworkKind = 'coupling' | 'coCitation'
+
 export interface GraphNode {
   id: string
   label: string

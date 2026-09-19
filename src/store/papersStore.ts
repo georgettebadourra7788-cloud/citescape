@@ -4,6 +4,9 @@ import { DEFAULT_TARGET_WORKS } from '../lib/openalex'
 
 export type FetchStatus = 'idle' | 'loading' | 'success' | 'empty' | 'error'
 
+/** What produced the current/pending `papers` — lets a failed fetch retry the right thing. */
+export type PapersSource = { type: 'search' } | { type: 'project'; uid: string; pid: string }
+
 export interface PapersState {
   status: FetchStatus
   query: string
@@ -13,6 +16,7 @@ export interface PapersState {
   error: string | null
   /** When the current `papers` finished fetching — used by exports' About sheet. */
   fetchedAt: Date | null
+  source: PapersSource
 }
 
 const initialState: PapersState = {
@@ -23,6 +27,7 @@ const initialState: PapersState = {
   targetCount: DEFAULT_TARGET_WORKS,
   error: null,
   fetchedAt: null,
+  source: { type: 'search' },
 }
 
 let state = initialState

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { ExportContext } from '../../lib/export/exportContext'
-import type { GraphBuildResult, GraphNode, NetworkResult } from '../../lib/graph/types'
+import type { ExportNetworkKind } from '../../lib/export/filename'
+import type { GraphBuildResult, GraphNode, NetworkKind, NetworkResult } from '../../lib/graph/types'
 import type { Paper } from '../../lib/openalex'
 import { computeAutoMinLinkStrength } from './autoMinLinkStrength'
 import { ClusterLegend } from './ClusterLegend'
@@ -8,14 +9,15 @@ import { ExportMenu } from './ExportMenu'
 import { LinkStrengthSlider } from './LinkStrengthSlider'
 import { NetworkGraph, type NetworkSigma } from './NetworkGraph'
 import { NodeDetailsPanel } from './NodeDetailsPanel'
-
-type NetworkKind = 'coupling' | 'coCitation'
+import { SaveProjectButton } from '../projects/SaveProjectButton'
 
 interface GraphExplorerProps {
   result: GraphBuildResult
   query: string
   papers: Paper[]
   fetchedAt: Date
+  /** Restores the view a reopened saved project was left in; a fresh search omits this. */
+  initialView?: { activeNetwork: NetworkKind; minLinkStrength: number }
 }
 
 const NETWORK_LABELS: Record<NetworkKind, string> = {
@@ -28,34 +30,30 @@ const UNIT_LABELS: Record<NetworkKind, 'papers' | 'works'> = {
   coCitation: 'works',
 }
 
+/** Filename-safe slug per network — distinct from the display label above. */
+const EXPORT_NETWORK_KINDS: Record<NetworkKind, ExportNetworkKind> = {
+  coupling: 'coupling',
+  coCitation: 'cocitation',
+}
+
 const NETWORK_KINDS = Object.keys(NETWORK_LABELS) as NetworkKind[]
 
 function maxEdgeWeight(network: NetworkResult): number {
   return network.edges.reduce((max, edge) => Math.max(max, edge.weight), 1)
 }
 
-export function GraphExplorer({ result, query, papers, fetchedAt }: GraphExplorerProps) {
-  const [activeNetwork, setActiveNetwork] = useState<NetworkKind>('coupling')
+export function GraphExplorer({ result, query, papers, fetchedAt, initialView }: GraphExplorerProps) {
+  const [activeNetwork, setActiveNetwork] = useState<NetworkKind>(
+    () => initialView?.activeNetwork ?? 'coupling',
+  )
   const [selectedClusterId, setSelectedClusterId] = useState<number | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [minLinkStrength, setMinLinkStrength] = useState(() =>
-    computeAutoMinLinkStrength(result.coupling.edges),
+  const [minLinkStrength, setMinLinkStrength] = useState(
+    () => initialView?.minLinkStrength ?? computeAutoMinLinkStrength(result.coupling.edges),
   )
   const [sigma, setSigma] = useState<NetworkSigma | null>(null)
 
   const network = result[activeNetwork]
-
-  const exportContext = useMemo<ExportContext>(
-    () => ({
-      query,
-      papers,
-      coupling: result.coupling,
-      coCitation: result.coCitation,
-      meta: result.meta,
-      fetchedAt,
-    }),
-    [query, papers, result, fetchedAt],
-  )
 
   // A selected cluster/node/link-strength from one network is meaningless
   // (and can look like "everything vanished") on the other, so reset as
@@ -76,6 +74,24 @@ export function GraphExplorer({ result, query, papers, fetchedAt }: GraphExplore
   const visibleEdgeCount = useMemo(
     () => network.edges.filter((edge) => edge.weight >= minLinkStrength).length,
     [network, minLinkStrength],
+  )
+
+  const exportContext = useMemo<ExportContext>(
+    () => ({
+      query,
+      papers,
+      coupling: result.coupling,
+      coCitation: result.coCitation,
+      meta: result.meta,
+      fetchedAt,
+      figure: {
+        networkLabel: NETWORK_LABELS[activeNetwork],
+        minLinkStrength,
+        visibleEdgeCount,
+        totalEdgeCount: network.edges.length,
+      },
+    }),
+    [query, papers, result, fetchedAt, activeNetwork, minLinkStrength, visibleEdgeCount, network],
   )
 
   return (
@@ -107,10 +123,19 @@ export function GraphExplorer({ result, query, papers, fetchedAt }: GraphExplore
               onChange={setMinLinkStrength}
             />
           )}
+          <SaveProjectButton
+            query={query}
+            papers={papers}
+            fetchedAt={fetchedAt}
+            meta={result.meta}
+            activeNetwork={activeNetwork}
+            minLinkStrength={minLinkStrength}
+          />
           <ExportMenu
             context={exportContext}
             activeNetwork={network}
             activeNetworkLabel={NETWORK_LABELS[activeNetwork]}
+            networkKind={EXPORT_NETWORK_KINDS[activeNetwork]}
             unitLabel={UNIT_LABELS[activeNetwork]}
             minLinkStrength={minLinkStrength}
             sigma={sigma}

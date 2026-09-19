@@ -81,12 +81,54 @@ export function buildEdgesRows(network: NetworkResult): EdgeRow[] {
   }))
 }
 
+export interface CoCitationNodeRow {
+  'OpenAlex ID': string
+  Title: string
+  Authors: string
+  Year: number | ''
+  'Global citations': number | ''
+  'Times co-cited (weighted degree)': number
+  Cluster: string
+  'In fetched set?': 'Yes' | 'No'
+}
+
+/**
+ * One row per co-citation node (a referenced work, not necessarily one of
+ * our fetched papers). "Global citations" and "In fetched set?" are only
+ * knowable for the subset that also happen to be papers we fetched — we
+ * never fetch cited_by_count for reference-only nodes (see step 5).
+ */
+export function buildCoCitationNodesRows(context: ExportContext): CoCitationNodeRow[] {
+  const paperById = new Map(context.papers.map((p) => [p.id, p]))
+
+  const weightedDegreeById = new Map<string, number>()
+  for (const edge of context.coCitation.edges) {
+    weightedDegreeById.set(edge.source, (weightedDegreeById.get(edge.source) ?? 0) + edge.weight)
+    weightedDegreeById.set(edge.target, (weightedDegreeById.get(edge.target) ?? 0) + edge.weight)
+  }
+
+  return context.coCitation.nodes.map((node) => {
+    const paper = paperById.get(node.id)
+    return {
+      'OpenAlex ID': node.id,
+      Title: node.label,
+      Authors: (node.authors ?? []).join(', '),
+      Year: node.year ?? '',
+      'Global citations': paper ? paper.citedByCount : '',
+      'Times co-cited (weighted degree)': weightedDegreeById.get(node.id) ?? 0,
+      Cluster: clusterDisplayLabel(node.cluster),
+      'In fetched set?': paper ? 'Yes' : 'No',
+    }
+  })
+}
+
 export interface AboutRow {
   Field: string
   Value: string
 }
 
 export function buildAboutRows(context: ExportContext): AboutRow[] {
+  const { figure } = context
   return [
     { Field: 'Query', Value: context.query },
     { Field: 'Date fetched', Value: context.fetchedAt.toISOString() },
@@ -103,6 +145,24 @@ export function buildAboutRows(context: ExportContext): AboutRow[] {
     { Field: 'Co-citation: max nodes', Value: String(context.meta.maxCoCitationNodes) },
     { Field: 'Louvain clustering seed', Value: String(context.meta.louvainSeed) },
     { Field: 'ForceAtlas2 layout iterations', Value: String(context.meta.layoutIterations) },
+    { Field: 'Figure network', Value: figure.networkLabel },
+    { Field: 'Figure minimum link strength', Value: String(figure.minLinkStrength) },
+    {
+      Field: 'Edges shown in figure',
+      Value: `${figure.visibleEdgeCount} of ${figure.totalEdgeCount}`,
+    },
+    {
+      Field: 'Note: edges in figure vs. exports',
+      Value:
+        "The GEXF, Pajek, and this workbook's Edges sheets always contain every edge for " +
+        "both networks — only the PNG/SVG figure is filtered by the minimum link strength above.",
+    },
+    {
+      Field: "Note: Papers sheet's Co-citation cluster column",
+      Value:
+        'Only filled for papers that are also co-citation nodes themselves (see the ' +
+        "Co-citation nodes sheet) — most papers cite references outside the set, so they won't have one.",
+    },
     { Field: 'CiteScape version', Value: APP_VERSION },
   ]
 }

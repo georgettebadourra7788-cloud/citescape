@@ -211,15 +211,15 @@ export interface MinimalWork {
   authors: string[]
 }
 
-function shortOpenAlexId(id: string): string {
+export function shortOpenAlexId(id: string): string {
   return id.replace(/^https:\/\/openalex\.org\//, '')
 }
 
-function buildIdFilterUrl(ids: string[], mailto?: string): string {
+function buildIdFilterUrl(ids: string[], select: string, mailto?: string): string {
   const url = new URL(OPENALEX_WORKS_URL)
   url.searchParams.set('filter', `ids.openalex:${ids.map(shortOpenAlexId).join('|')}`)
   url.searchParams.set('per_page', String(ID_FILTER_BATCH_SIZE))
-  url.searchParams.set('select', MINIMAL_SELECT_FIELDS)
+  url.searchParams.set('select', select)
   if (mailto) url.searchParams.set('mailto', mailto)
   return url.toString()
 }
@@ -244,7 +244,10 @@ export async function fetchWorksByIds(
 
   for (let i = 0; i < ids.length; i += ID_FILTER_BATCH_SIZE) {
     const batch = ids.slice(i, i + ID_FILTER_BATCH_SIZE)
-    const page = await requestWorks(buildIdFilterUrl(batch, options.mailto), options.signal)
+    const page = await requestWorks(
+      buildIdFilterUrl(batch, MINIMAL_SELECT_FIELDS, options.mailto),
+      options.signal,
+    )
     for (const work of page.results) {
       result.set(work.id, {
         id: work.id,
@@ -259,4 +262,40 @@ export async function fetchWorksByIds(
   }
 
   return result
+}
+
+export interface FetchPapersByIdsOptions {
+  mailto?: string
+  signal?: AbortSignal
+  /** Called after each batch with the running total and the overall total. */
+  onProgress?: (fetched: number, total: number) => void
+}
+
+/**
+ * Re-fetches full `Paper` records (including `referencedWorks`, needed to
+ * rebuild the graph) for a list of OpenAlex work IDs — used to reopen a
+ * saved project, which only stores IDs rather than paper content. Order of
+ * the result is not guaranteed to match `ids`; a work OpenAlex has since
+ * removed or merged is simply absent.
+ */
+export async function fetchPapersByIds(
+  ids: string[],
+  options: FetchPapersByIdsOptions = {},
+): Promise<Paper[]> {
+  const papers: Paper[] = []
+  if (ids.length === 0) return papers
+
+  for (let i = 0; i < ids.length; i += ID_FILTER_BATCH_SIZE) {
+    const batch = ids.slice(i, i + ID_FILTER_BATCH_SIZE)
+    const page = await requestWorks(
+      buildIdFilterUrl(batch, SELECT_FIELDS, options.mailto),
+      options.signal,
+    )
+    for (const work of page.results) {
+      papers.push(workToPaper(work))
+    }
+    options.onProgress?.(Math.min(i + batch.length, ids.length), ids.length)
+  }
+
+  return papers
 }

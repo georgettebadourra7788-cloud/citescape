@@ -1,5 +1,6 @@
 import { DEFAULT_TARGET_WORKS, OpenAlexError, fetchWorksForTopic } from './openalex'
 import { setPapersState } from '../store/papersStore'
+import { clearActiveProject } from '../store/activeProjectStore'
 import { buildGraphs } from './graphWorkerController'
 
 const mailto = import.meta.env.VITE_OPENALEX_MAILTO as string | undefined
@@ -15,6 +16,7 @@ export async function runSearch(query: string): Promise<void> {
   const controller = new AbortController()
   activeController = controller
 
+  clearActiveProject()
   setPapersState({
     status: 'loading',
     query: trimmed,
@@ -22,6 +24,7 @@ export async function runSearch(query: string): Promise<void> {
     fetchedCount: 0,
     targetCount: DEFAULT_TARGET_WORKS,
     error: null,
+    source: { type: 'search' },
   })
 
   try {

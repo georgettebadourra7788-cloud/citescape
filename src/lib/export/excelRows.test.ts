@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildAboutRows, buildClustersRows, buildEdgesRows, buildPapersRows } from './excelRows'
+import {
+  buildAboutRows,
+  buildClustersRows,
+  buildCoCitationNodesRows,
+  buildEdgesRows,
+  buildPapersRows,
+} from './excelRows'
 import { APP_VERSION } from '../appInfo'
 import { makePaper } from '../graph/testFixtures'
 import type { ExportContext } from './exportContext'
@@ -89,6 +95,12 @@ const context: ExportContext = {
     layoutIterations: 300,
   },
   fetchedAt: new Date('2026-09-19T12:00:00Z'),
+  figure: {
+    networkLabel: 'Bibliographic coupling',
+    minLinkStrength: 2,
+    visibleEdgeCount: 1,
+    totalEdgeCount: 1,
+  },
 }
 
 describe('buildPapersRows', () => {
@@ -172,5 +184,75 @@ describe('buildAboutRows', () => {
     expect(byField['Louvain clustering seed']).toBe('42')
     expect(byField['ForceAtlas2 layout iterations']).toBe('300')
     expect(byField['CiteScape version']).toBe(APP_VERSION)
+  })
+
+  it('includes the current figure\'s network, minimum link strength, and visible edge count', () => {
+    const rows = buildAboutRows(context)
+    const byField = Object.fromEntries(rows.map((r) => [r.Field, r.Value]))
+
+    expect(byField['Figure network']).toBe('Bibliographic coupling')
+    expect(byField['Figure minimum link strength']).toBe('2')
+    expect(byField['Edges shown in figure']).toBe('1 of 1')
+  })
+
+  it('notes that GEXF/Pajek/Excel edges are unfiltered and the Papers co-citation column is partial', () => {
+    const rows = buildAboutRows(context)
+    const byField = Object.fromEntries(rows.map((r) => [r.Field, r.Value]))
+
+    expect(byField['Note: edges in figure vs. exports']).toMatch(/every edge/i)
+    expect(byField["Note: Papers sheet's Co-citation cluster column"]).toMatch(
+      /only filled for papers/i,
+    )
+  })
+})
+
+describe('buildCoCitationNodesRows', () => {
+  // R1 is co-cited with both P1 (also one of our fetched papers) and R3
+  // (an external reference only). Hand-verifiable weighted degrees:
+  //   R1: 3 + 2 = 5      P1: 3      R3: 2
+  const coCitationWithEdges: NetworkResult = {
+    nodes: [
+      node({ id: 'R1', label: 'Reference One', cluster: 1, inSetCitations: 2 }),
+      node({ id: 'P1', label: 'Paper One', cluster: 1, inSetCitations: 1 }),
+      node({ id: 'R3', label: 'Reference Three', cluster: 2, inSetCitations: 1, resolved: true }),
+    ],
+    edges: [
+      { source: 'R1', target: 'P1', weight: 3 },
+      { source: 'R1', target: 'R3', weight: 2 },
+    ],
+    clusters: [],
+  }
+  const contextWithEdges: ExportContext = { ...context, coCitation: coCitationWithEdges }
+
+  it('emits exactly one row per co-citation node', () => {
+    const rows = buildCoCitationNodesRows(contextWithEdges)
+    expect(rows).toHaveLength(coCitationWithEdges.nodes.length)
+  })
+
+  it('computes weighted degree (times co-cited) by summing incident edge weights', () => {
+    const rows = buildCoCitationNodesRows(contextWithEdges)
+    const byId = Object.fromEntries(rows.map((r) => [r['OpenAlex ID'], r]))
+
+    expect(byId['R1']['Times co-cited (weighted degree)']).toBe(5)
+    expect(byId['P1']['Times co-cited (weighted degree)']).toBe(3)
+    expect(byId['R3']['Times co-cited (weighted degree)']).toBe(2)
+  })
+
+  it('flags "In fetched set?" and fills global citations only for nodes that are also our papers', () => {
+    const rows = buildCoCitationNodesRows(contextWithEdges)
+    const byId = Object.fromEntries(rows.map((r) => [r['OpenAlex ID'], r]))
+
+    expect(byId['P1']['In fetched set?']).toBe('Yes')
+    expect(byId['P1']['Global citations']).toBe(42) // from papers, not the co-citation node itself
+
+    expect(byId['R1']['In fetched set?']).toBe('No')
+    expect(byId['R1']['Global citations']).toBe('')
+  })
+
+  it('labels clusters the same way the legend does', () => {
+    const rows = buildCoCitationNodesRows(contextWithEdges)
+    const byId = Object.fromEntries(rows.map((r) => [r['OpenAlex ID'], r]))
+    expect(byId['R1'].Cluster).toBe('Cluster 1')
+    expect(byId['R3'].Cluster).toBe('Cluster 2')
   })
 })

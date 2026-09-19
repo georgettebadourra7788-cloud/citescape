@@ -1,13 +1,16 @@
 import { useState, type FormEvent } from 'react'
 import { EmptyState, ErrorState, LoadingState } from './components/StatusStates'
+import { GraphSummary } from './components/GraphSummary'
 import { PapersTable } from './components/PapersTable'
 import { ResultsSummary } from './components/ResultsSummary'
 import { runSearch } from './lib/searchController'
 import { usePapersStore } from './store/papersStore'
+import { useGraphStore } from './store/graphStore'
 
 function App() {
   const [topic, setTopic] = useState('')
   const { status, query, papers, fetchedCount, targetCount, error } = usePapersStore()
+  const graph = useGraphStore()
   const isLoading = status === 'loading'
 
   function handleSubmit(event: FormEvent) {
@@ -74,6 +77,23 @@ function App() {
             <div className="flex flex-col gap-6 text-left">
               <ResultsSummary papers={papers} />
               <PapersTable papers={papers} />
+
+              {graph.status === 'building' && (
+                <p className="text-sm text-slate-600">
+                  {graph.stageMessage ?? 'Building networks…'}
+                </p>
+              )}
+              {graph.status === 'error' && (
+                <p className="text-sm text-red-700">
+                  Couldn&rsquo;t build networks: {graph.error}
+                </p>
+              )}
+              {graph.status === 'success' && graph.result && (
+                <GraphSummary
+                  coupling={graph.result.coupling}
+                  coCitation={graph.result.coCitation}
+                />
+              )}
             </div>
           )}
         </div>

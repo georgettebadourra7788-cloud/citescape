@@ -1,5 +1,6 @@
 import { DEFAULT_TARGET_WORKS, OpenAlexError, fetchWorksForTopic } from './openalex'
 import { setPapersState } from '../store/papersStore'
+import { buildGraphs } from './graphWorkerController'
 
 const mailto = import.meta.env.VITE_OPENALEX_MAILTO as string | undefined
 
@@ -40,6 +41,7 @@ export async function runSearch(query: string): Promise<void> {
       papers,
       fetchedCount: papers.length,
     })
+    if (papers.length > 0) buildGraphs(papers)
   } catch (err) {
     if (controller.signal.aborted) return
     const message =

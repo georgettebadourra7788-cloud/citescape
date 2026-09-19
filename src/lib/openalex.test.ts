@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   OpenAlexError,
+  fetchWorksByIds,
   fetchWorksForTopic,
   workToPaper,
   type OpenAlexWork,
@@ -205,5 +206,86 @@ describe('fetchWorksForTopic', () => {
 
     await expect(fetchWorksForTopic('coastal cities')).rejects.toThrow(OpenAlexError)
     await expect(fetchWorksForTopic('coastal cities')).rejects.toThrow(/network/i)
+  })
+})
+
+describe('fetchWorksByIds', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('returns an empty map without calling fetch when given no ids', async () => {
+    const result = await fetchWorksByIds([])
+    expect(result.size).toBe(0)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('maps results by id and strips the mailto/filter query correctly', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        meta: { count: 1, next_cursor: null },
+        results: [makeWork({ id: 'https://openalex.org/W2', title: 'A cited work' })],
+      }),
+    )
+
+    const result = await fetchWorksByIds(['https://openalex.org/W2'], {
+      mailto: 'researcher@example.com',
+    })
+
+    expect(result.get('https://openalex.org/W2')).toMatchObject({
+      id: 'https://openalex.org/W2',
+      title: 'A cited work',
+      year: 2020,
+      authors: ['Ada Lovelace'],
+    })
+
+    const requestedUrl = new URL(vi.mocked(fetch).mock.calls[0][0] as string)
+    expect(requestedUrl.searchParams.get('filter')).toBe('ids.openalex:W2')
+    expect(requestedUrl.searchParams.get('mailto')).toBe('researcher@example.com')
+  })
+
+  it('batches more than 100 ids into separate requests of at most 100 each', async () => {
+    const ids = Array.from({ length: 150 }, (_, i) => `https://openalex.org/W${i}`)
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse({ meta: { count: 0, next_cursor: null }, results: [] }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ meta: { count: 0, next_cursor: null }, results: [] }),
+      )
+
+    await fetchWorksByIds(ids)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const firstBatchFilter = new URL(vi.mocked(fetch).mock.calls[0][0] as string).searchParams.get(
+      'filter',
+    )
+    const secondBatchFilter = new URL(
+      vi.mocked(fetch).mock.calls[1][0] as string,
+    ).searchParams.get('filter')
+
+    expect(firstBatchFilter?.split('|')).toHaveLength(100)
+    expect(secondBatchFilter?.split('|')).toHaveLength(50)
+  })
+
+  it('reports progress after each batch', async () => {
+    const ids = Array.from({ length: 150 }, (_, i) => `https://openalex.org/W${i}`)
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse({ meta: { count: 0, next_cursor: null }, results: [] }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ meta: { count: 0, next_cursor: null }, results: [] }),
+      )
+
+    const onProgress = vi.fn()
+    await fetchWorksByIds(ids, { onProgress })
+
+    expect(onProgress).toHaveBeenNthCalledWith(1, 100, 150)
+    expect(onProgress).toHaveBeenNthCalledWith(2, 150, 150)
   })
 })

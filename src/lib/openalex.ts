@@ -106,7 +106,7 @@ export function workToPaper(work: OpenAlexWork): Paper {
   }
 }
 
-function buildUrl(query: string, cursor: string, mailto?: string): string {
+function buildSearchUrl(query: string, cursor: string, mailto?: string): string {
   const url = new URL(OPENALEX_WORKS_URL)
   url.searchParams.set('search', query)
   url.searchParams.set('sort', 'relevance_score:desc')
@@ -117,15 +117,14 @@ function buildUrl(query: string, cursor: string, mailto?: string): string {
   return url.toString()
 }
 
-async function fetchPage(
-  query: string,
-  cursor: string,
-  mailto: string | undefined,
+/** Shared fetch + error mapping for any `works` list request. */
+async function requestWorks(
+  url: string,
   signal: AbortSignal | undefined,
 ): Promise<OpenAlexWorksResponse> {
   let response: Response
   try {
-    response = await fetch(buildUrl(query, cursor, mailto), { signal })
+    response = await fetch(url, { signal })
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     throw new OpenAlexError(
@@ -147,6 +146,15 @@ async function fetchPage(
   }
 
   return (await response.json()) as OpenAlexWorksResponse
+}
+
+async function fetchPage(
+  query: string,
+  cursor: string,
+  mailto: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<OpenAlexWorksResponse> {
+  return requestWorks(buildSearchUrl(query, cursor, mailto), signal)
 }
 
 export interface FetchWorksOptions {
@@ -184,4 +192,71 @@ export async function fetchWorksForTopic(
   }
 
   return papers.slice(0, target)
+}
+
+// --- Batch lookup by ID (used for co-citation reference metadata) ---
+//
+// The `ids.openalex` filter (alias `openalex`) ORs together up to 100
+// pipe-separated IDs per the docs' filter-combination limit. `select` is
+// still root-level only.
+
+const ID_FILTER_BATCH_SIZE = 100
+
+const MINIMAL_SELECT_FIELDS = ['id', 'title', 'publication_year', 'authorships'].join(',')
+
+export interface MinimalWork {
+  id: string
+  title: string
+  year: number | null
+  authors: string[]
+}
+
+function shortOpenAlexId(id: string): string {
+  return id.replace(/^https:\/\/openalex\.org\//, '')
+}
+
+function buildIdFilterUrl(ids: string[], mailto?: string): string {
+  const url = new URL(OPENALEX_WORKS_URL)
+  url.searchParams.set('filter', `ids.openalex:${ids.map(shortOpenAlexId).join('|')}`)
+  url.searchParams.set('per_page', String(ID_FILTER_BATCH_SIZE))
+  url.searchParams.set('select', MINIMAL_SELECT_FIELDS)
+  if (mailto) url.searchParams.set('mailto', mailto)
+  return url.toString()
+}
+
+export interface FetchWorksByIdsOptions {
+  mailto?: string
+  signal?: AbortSignal
+  /** Called after each batch with the running total and the overall total. */
+  onProgress?: (fetched: number, total: number) => void
+}
+
+/**
+ * Look up minimal metadata (title, year, authors) for a list of OpenAlex
+ * work IDs, batching requests at the API's 100-values-per-filter limit.
+ */
+export async function fetchWorksByIds(
+  ids: string[],
+  options: FetchWorksByIdsOptions = {},
+): Promise<Map<string, MinimalWork>> {
+  const result = new Map<string, MinimalWork>()
+  if (ids.length === 0) return result
+
+  for (let i = 0; i < ids.length; i += ID_FILTER_BATCH_SIZE) {
+    const batch = ids.slice(i, i + ID_FILTER_BATCH_SIZE)
+    const page = await requestWorks(buildIdFilterUrl(batch, options.mailto), options.signal)
+    for (const work of page.results) {
+      result.set(work.id, {
+        id: work.id,
+        title: work.title ?? '(untitled)',
+        year: work.publication_year,
+        authors: (work.authorships ?? [])
+          .map((a) => a.author?.display_name)
+          .filter((name): name is string => Boolean(name)),
+      })
+    }
+    options.onProgress?.(Math.min(i + batch.length, ids.length), ids.length)
+  }
+
+  return result
 }

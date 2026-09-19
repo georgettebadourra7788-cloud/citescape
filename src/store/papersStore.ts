@@ -11,6 +11,8 @@ export interface PapersState {
   fetchedCount: number
   targetCount: number
   error: string | null
+  /** When the current `papers` finished fetching — used by exports' About sheet. */
+  fetchedAt: Date | null
 }
 
 const initialState: PapersState = {
@@ -20,6 +22,7 @@ const initialState: PapersState = {
   fetchedCount: 0,
   targetCount: DEFAULT_TARGET_WORKS,
   error: null,
+  fetchedAt: null,
 }
 
 let state = initialState

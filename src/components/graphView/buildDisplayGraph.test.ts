@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { buildDisplayGraph, LABELED_NODE_COUNT, MAX_NODE_SIZE, MIN_NODE_SIZE } from './buildDisplayGraph'
-import type { NetworkResult, GraphNode } from '../../lib/graph/types'
+import {
+  buildDisplayGraph,
+  MAX_FORCED_LABELS,
+  MAX_NODE_SIZE,
+  MIN_NODE_SIZE,
+} from './buildDisplayGraph'
+import { OTHER_COLOR } from '../../lib/graph/clusterColors'
+import type { NetworkResult, GraphNode, ClusterSummary } from '../../lib/graph/types'
 
 function node(overrides: Partial<GraphNode> & { id: string }): GraphNode {
   return {
     label: overrides.id,
     year: 2020,
-    citations: 0,
-    cluster: 0,
+    inSetCitations: 0,
+    globalCitations: 0,
+    cluster: 1,
     degree: 1,
     x: 0,
     y: 0,
@@ -15,13 +22,23 @@ function node(overrides: Partial<GraphNode> & { id: string }): GraphNode {
   }
 }
 
+function cluster(overrides: Partial<ClusterSummary> & { cluster: number }): ClusterSummary {
+  return {
+    size: 1,
+    topPapers: [],
+    medianYear: null,
+    topKeywords: [],
+    allUnresolved: false,
+    ...overrides,
+  }
+}
+
 describe('buildDisplayGraph', () => {
-  it('scales node size by citations (log scale) between the min and max bounds', () => {
+  it('scales node size by citation rank (log scale) between the min and max bounds, a 3x ratio', () => {
+    expect(MAX_NODE_SIZE).toBe(MIN_NODE_SIZE * 3)
+
     const network: NetworkResult = {
-      nodes: [
-        node({ id: 'A', citations: 0 }),
-        node({ id: 'B', citations: 100 }),
-      ],
+      nodes: [node({ id: 'A', globalCitations: 0 }), node({ id: 'B', globalCitations: 100 })],
       edges: [],
       clusters: [],
     }
@@ -31,17 +48,28 @@ describe('buildDisplayGraph', () => {
     expect(graph.getNodeAttribute('B', 'size')).toBe(MAX_NODE_SIZE)
   })
 
-  it('only labels the top LABELED_NODE_COUNT nodes by citations', () => {
-    const nodes = Array.from({ length: LABELED_NODE_COUNT + 5 }, (_, i) =>
-      node({ id: `N${i}`, citations: i, label: `Paper ${i}` }),
+  it('force-labels only each cluster\'s top paper, capped at MAX_FORCED_LABELS', () => {
+    const clusters = Array.from({ length: MAX_FORCED_LABELS + 3 }, (_, i) =>
+      cluster({ cluster: i + 1, topPapers: [{ id: `top${i}`, title: `Top ${i}`, citations: 1 }] }),
     )
-    const graph = buildDisplayGraph({ nodes, edges: [], clusters: [] })
+    const nodes = clusters.map((c) => node({ id: c.topPapers[0].id, label: c.topPapers[0].title }))
+    const graph = buildDisplayGraph({ nodes, edges: [], clusters })
 
-    const labeledCount = nodes.filter((n) => graph.getNodeAttribute(n.id, 'label') !== null).length
-    expect(labeledCount).toBe(LABELED_NODE_COUNT)
-    // The highest-citation nodes should be the labeled ones.
-    expect(graph.getNodeAttribute('N4', 'label')).toBeNull()
-    expect(graph.getNodeAttribute('N24', 'label')).toBe('Paper 24')
+    const forced = nodes.filter((n) => graph.getNodeAttribute(n.id, 'forceLabel')).length
+    expect(forced).toBe(MAX_FORCED_LABELS)
+    // The earliest (biggest) clusters keep their forced label.
+    expect(graph.getNodeAttribute('top0', 'forceLabel')).toBe(true)
+    expect(graph.getNodeAttribute(`top${MAX_FORCED_LABELS + 2}`, 'forceLabel')).toBe(false)
+  })
+
+  it('renders unresolved nodes gray and never labels them, even if they would be a label pick', () => {
+    const clusters = [cluster({ cluster: 1, topPapers: [{ id: 'ghost', title: 'x', citations: 1 }] })]
+    const nodes = [node({ id: 'ghost', resolved: false, label: 'Unknown work (no OpenAlex record)' })]
+    const graph = buildDisplayGraph({ nodes, edges: [], clusters })
+
+    expect(graph.getNodeAttribute('ghost', 'color')).toBe(OTHER_COLOR)
+    expect(graph.getNodeAttribute('ghost', 'label')).toBeNull()
+    expect(graph.getNodeAttribute('ghost', 'forceLabel')).toBe(false)
   })
 
   it('drops edges that reference a node outside the network (defensive)', () => {

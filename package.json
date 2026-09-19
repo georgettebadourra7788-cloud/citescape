@@ -1,7 +1,7 @@
 {
   "name": "citescape",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,12 +11,14 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@sigma/export-image": "^3.0.0",
     "graphology": "^0.26.0",
     "graphology-communities-louvain": "^2.0.2",
     "graphology-layout-forceatlas2": "^0.10.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "sigma": "^3.0.3"
+    "sigma": "^3.0.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

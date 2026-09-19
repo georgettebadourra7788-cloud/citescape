@@ -1,3 +1,5 @@
+import { citationRank } from './citationRank'
+import { OTHER_CLUSTER_ID } from './clusterDisplay'
 import type { ClusterSummary, GraphNode } from './types'
 
 export function median(nums: number[]): number | null {
@@ -41,11 +43,12 @@ export function buildClusterSummaries(
     // become a cluster's top/label paper — only fall back to it if every
     // node in the cluster is unresolved.
     const resolvedNodes = clusterNodes.filter((node) => node.resolved !== false)
-    const topPapersSource = resolvedNodes.length > 0 ? resolvedNodes : clusterNodes
+    const allUnresolved = resolvedNodes.length === 0
+    const topPapersSource = allUnresolved ? clusterNodes : resolvedNodes
     const topPapers = [...topPapersSource]
-      .sort((a, b) => b.citations - a.citations)
+      .sort((a, b) => citationRank(b) - citationRank(a))
       .slice(0, 5)
-      .map((node) => ({ id: node.id, title: node.label, citations: node.citations }))
+      .map((node) => ({ id: node.id, title: node.label, citations: citationRank(node) }))
 
     const medianYear = median(
       clusterNodes.map((node) => node.year).filter((year): year is number => year !== null),
@@ -55,8 +58,21 @@ export function buildClusterSummaries(
       clusterNodes.map((node) => keywordsById.get(node.id) ?? []),
     )
 
-    summaries.push({ cluster, size: clusterNodes.length, topPapers, medianYear, topKeywords })
+    summaries.push({
+      cluster,
+      size: clusterNodes.length,
+      topPapers,
+      medianYear,
+      topKeywords,
+      allUnresolved,
+    })
   }
 
-  return summaries.sort((a, b) => b.size - a.size)
+  // Numbered clusters are already 1..N by size (see clusterDisplay.ts);
+  // "Other" always sorts last regardless of its combined size.
+  return summaries.sort((a, b) => {
+    if (a.cluster === OTHER_CLUSTER_ID) return 1
+    if (b.cluster === OTHER_CLUSTER_ID) return -1
+    return a.cluster - b.cluster
+  })
 }

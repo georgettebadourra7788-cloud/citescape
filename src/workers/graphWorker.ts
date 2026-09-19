@@ -2,8 +2,10 @@
 
 import { assembleNetwork, type NodeMeta } from '../lib/graph/assemble'
 import { stripArtifactReferences } from '../lib/graph/artifactReferences'
-import { buildCoCitationGraph } from '../lib/graph/coCitation'
-import { buildCouplingGraph } from '../lib/graph/coupling'
+import { buildCoCitationGraph, DEFAULT_MIN_COCITATION_WEIGHT, DEFAULT_MAX_COCITATION_NODES } from '../lib/graph/coCitation'
+import { buildCouplingGraph, DEFAULT_MIN_COUPLING_WEIGHT } from '../lib/graph/coupling'
+import { LAYOUT_ITERATIONS } from '../lib/graph/layout'
+import { LOUVAIN_SEED } from '../lib/graph/louvain'
 import { fetchWorksByIds } from '../lib/openalex'
 import type { BuildGraphsRequest, GraphWorkerMessage } from '../lib/graph/types'
 import type { Paper } from '../lib/openalex'
@@ -22,6 +24,22 @@ self.onmessage = async (event: MessageEvent<BuildGraphsRequest>) => {
     return referencedWorks === p.referencedWorks ? p : { ...p, referencedWorks }
   })
 
+  // How many papers *in our own set* cite each paper *in our own set* —
+  // distinct from OpenAlex's global cited_by_count (see NodeMeta docs).
+  const paperIdSet = new Set(papers.map((p) => p.id))
+  const inSetCitersByPaperId = new Map<string, Set<string>>()
+  for (const paper of papers) {
+    for (const ref of paper.referencedWorks) {
+      if (!paperIdSet.has(ref)) continue
+      let citers = inSetCitersByPaperId.get(ref)
+      if (!citers) {
+        citers = new Set()
+        inSetCitersByPaperId.set(ref, citers)
+      }
+      citers.add(paper.id)
+    }
+  }
+
   try {
     post({
       type: 'progress',
@@ -32,7 +50,14 @@ self.onmessage = async (event: MessageEvent<BuildGraphsRequest>) => {
     const couplingMeta = new Map<string, NodeMeta>(
       papers.map((p) => [
         p.id,
-        { label: p.title, year: p.year, citations: p.citedByCount, authors: p.authors, doi: p.doi },
+        {
+          label: p.title,
+          year: p.year,
+          inSetCitations: inSetCitersByPaperId.get(p.id)?.size ?? 0,
+          globalCitations: p.citedByCount,
+          authors: p.authors,
+          doi: p.doi,
+        },
       ]),
     )
     const couplingKeywords = new Map(papers.map((p) => [p.id, p.keywords]))
@@ -79,9 +104,10 @@ self.onmessage = async (event: MessageEvent<BuildGraphsRequest>) => {
       if (!resolved) unresolvedNodeCount += 1
       const citers = citingPapersByRef.get(refId) ?? new Set<string>()
       coCitationMeta.set(refId, {
-        label: work?.title ?? `(no OpenAlex record found for ${refId})`,
+        label: work?.title ?? 'Unknown work (no OpenAlex record)',
         year: work?.year ?? null,
-        citations: citers.size,
+        inSetCitations: citers.size,
+        globalCitations: null,
         authors: work?.authors,
         resolved,
       })
@@ -98,7 +124,20 @@ self.onmessage = async (event: MessageEvent<BuildGraphsRequest>) => {
     const coCitation = assembleNetwork(coCitationGraph, coCitationMeta, coCitationKeywords)
     coCitation.unresolvedNodeCount = unresolvedNodeCount
 
-    post({ type: 'done', result: { coupling, coCitation } })
+    post({
+      type: 'done',
+      result: {
+        coupling,
+        coCitation,
+        meta: {
+          minCouplingWeight: options.minCouplingWeight ?? DEFAULT_MIN_COUPLING_WEIGHT,
+          minCoCitationWeight: options.minCoCitationWeight ?? DEFAULT_MIN_COCITATION_WEIGHT,
+          maxCoCitationNodes: options.maxCoCitationNodes ?? DEFAULT_MAX_COCITATION_NODES,
+          louvainSeed: LOUVAIN_SEED,
+          layoutIterations: LAYOUT_ITERATIONS,
+        },
+      },
+    })
   } catch (err) {
     post({
       type: 'error',

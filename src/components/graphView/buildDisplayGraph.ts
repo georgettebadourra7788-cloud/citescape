@@ -1,12 +1,14 @@
 import Graph from 'graphology'
-import { clusterColor } from '../../lib/graph/clusterColors'
+import { citationRank } from '../../lib/graph/citationRank'
+import { clusterNodeColor, OTHER_COLOR } from '../../lib/graph/clusterColors'
+import { MAX_NODE_SIZE, MIN_NODE_SIZE, nodeSize } from '../../lib/graph/nodeSize'
 import { truncateTitle } from '../../lib/text'
 import type { NetworkResult } from '../../lib/graph/types'
 
-export const MIN_NODE_SIZE = 3
-export const MAX_NODE_SIZE = 22
-/** Only the largest nodes get a permanent label, to avoid a hairball of text. */
-export const LABELED_NODE_COUNT = 20
+export { MAX_NODE_SIZE, MIN_NODE_SIZE }
+
+/** At most this many nodes get a permanent, always-on label. */
+export const MAX_FORCED_LABELS = 8
 
 export interface DisplayNodeAttributes {
   x: number
@@ -14,6 +16,7 @@ export interface DisplayNodeAttributes {
   size: number
   color: string
   label: string | null
+  forceLabel: boolean
   cluster: number
   citations: number
 }
@@ -26,12 +29,6 @@ export interface DisplayEdgeAttributes {
 
 export type DisplayGraph = Graph<DisplayNodeAttributes, DisplayEdgeAttributes>
 
-function nodeSize(citations: number, maxCitations: number): number {
-  if (maxCitations <= 0) return MIN_NODE_SIZE
-  const t = Math.log1p(citations) / Math.log1p(maxCitations)
-  return MIN_NODE_SIZE + t * (MAX_NODE_SIZE - MIN_NODE_SIZE)
-}
-
 /**
  * Builds a graphology Graph with Sigma-ready display attributes
  * (x/y/size/color/label) from a worker-computed NetworkResult. Pure and
@@ -40,23 +37,31 @@ function nodeSize(citations: number, maxCitations: number): number {
 export function buildDisplayGraph(network: NetworkResult): DisplayGraph {
   const graph: DisplayGraph = new Graph({ type: 'undirected', multi: false, allowSelfLoops: false })
 
-  const maxCitations = Math.max(0, ...network.nodes.map((node) => node.citations))
-  const labeledNodeIds = new Set(
-    [...network.nodes]
-      .sort((a, b) => b.citations - a.citations)
-      .slice(0, LABELED_NODE_COUNT)
-      .map((node) => node.id),
+  const maxRank = Math.max(0, ...network.nodes.map(citationRank))
+
+  // One label per cluster's top item — the same "label paper" the legend
+  // shows — capped at MAX_FORCED_LABELS, biggest clusters first (and
+  // "Other" sorts last already, so it's the first one dropped if there
+  // are more than MAX_FORCED_LABELS clusters).
+  const forcedLabelIds = new Set(
+    network.clusters
+      .slice(0, MAX_FORCED_LABELS)
+      .map((cluster) => cluster.topPapers[0]?.id)
+      .filter((id): id is string => Boolean(id)),
   )
 
   for (const node of network.nodes) {
+    const rank = citationRank(node)
     graph.addNode(node.id, {
       x: node.x,
       y: node.y,
-      size: nodeSize(node.citations, maxCitations),
-      color: clusterColor(node.cluster),
-      label: labeledNodeIds.has(node.id) ? truncateTitle(node.label, 60) : null,
+      size: nodeSize(rank, maxRank),
+      color: node.resolved === false ? OTHER_COLOR : clusterNodeColor(node.cluster),
+      // Unresolved nodes are never labeled, forced or otherwise.
+      label: node.resolved === false ? null : truncateTitle(node.label, 60),
+      forceLabel: node.resolved !== false && forcedLabelIds.has(node.id),
       cluster: node.cluster,
-      citations: node.citations,
+      citations: rank,
     })
   }
 

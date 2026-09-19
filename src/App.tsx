@@ -11,7 +11,7 @@ import { useGraphStore } from './store/graphStore'
 function App() {
   const [topic, setTopic] = useState('')
   const [isTableExpanded, setIsTableExpanded] = useState(false)
-  const { status, query, papers, fetchedCount, targetCount, error } = usePapersStore()
+  const { status, query, papers, fetchedCount, targetCount, error, fetchedAt } = usePapersStore()
   const graph = useGraphStore()
   const isLoading = status === 'loading'
 
@@ -89,13 +89,18 @@ function App() {
                   Couldn&rsquo;t build networks: {graph.error}
                 </p>
               )}
-              {graph.status === 'success' && graph.result && (
+              {graph.status === 'success' && graph.result && fetchedAt && (
                 <>
                   <GraphSummary
                     coupling={graph.result.coupling}
                     coCitation={graph.result.coCitation}
                   />
-                  <GraphExplorer result={graph.result} />
+                  <GraphExplorer
+                    result={graph.result}
+                    query={query}
+                    papers={papers}
+                    fetchedAt={fetchedAt}
+                  />
                 </>
               )}
 

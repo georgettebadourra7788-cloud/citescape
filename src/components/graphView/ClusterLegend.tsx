@@ -1,4 +1,5 @@
-import { clusterColor } from '../../lib/graph/clusterColors'
+import { clusterColor, OTHER_COLOR } from '../../lib/graph/clusterColors'
+import { clusterDisplayLabel } from '../../lib/graph/clusterDisplay'
 import { truncateTitle } from '../../lib/text'
 import type { ClusterSummary } from '../../lib/graph/types'
 
@@ -34,11 +35,15 @@ export function ClusterLegend({
               <span
                 aria-hidden="true"
                 className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: clusterColor(cluster.cluster) }}
+                style={{
+                  backgroundColor: cluster.allUnresolved
+                    ? OTHER_COLOR
+                    : clusterColor(cluster.cluster),
+                }}
               />
               <span className="min-w-0">
                 <span className="font-medium text-slate-900">
-                  Cluster {cluster.cluster}
+                  {clusterDisplayLabel(cluster.cluster)}
                 </span>{' '}
                 <span className="text-slate-500">
                   ({cluster.size} {unitLabel})

@@ -1,13 +1,17 @@
 import type Graph from 'graphology'
 import { buildClusterSummaries } from './clusterSummary'
+import { citationRank } from './citationRank'
+import { OTHER_CLUSTER_ID, remapClustersForDisplay } from './clusterDisplay'
 import { computeLayout } from './layout'
 import { runLouvain } from './louvain'
+import { nodeSize } from './nodeSize'
 import type { GraphEdge, GraphNode, NetworkResult } from './types'
 
 export interface NodeMeta {
   label: string
   year: number | null
-  citations: number
+  inSetCitations: number
+  globalCitations: number | null
   authors?: string[]
   doi?: string | null
   resolved?: boolean
@@ -24,7 +28,19 @@ export function assembleNetwork(
   metaById: Map<string, NodeMeta>,
   keywordsById: Map<string, string[]>,
 ): NetworkResult {
-  const clusters = runLouvain(graph)
+  const rawClusters = runLouvain(graph)
+  const clusters = remapClustersForDisplay(rawClusters)
+
+  // ForceAtlas2's adjustSizes (overlap prevention) reads each node's `size`
+  // attribute directly, so set it — on the same scale the renderer uses —
+  // before computing positions.
+  const maxRank = Math.max(0, ...[...metaById.values()].map(citationRank))
+  graph.forEachNode((nodeId) => {
+    const meta = metaById.get(nodeId)
+    const rank = meta ? citationRank(meta) : 0
+    graph.setNodeAttribute(nodeId, 'size', nodeSize(rank, maxRank))
+  })
+
   const positions = computeLayout(graph)
 
   const nodes: GraphNode[] = graph.mapNodes((nodeId): GraphNode => {
@@ -34,8 +50,9 @@ export function assembleNetwork(
       id: nodeId,
       label: meta?.label ?? nodeId,
       year: meta?.year ?? null,
-      citations: meta?.citations ?? 0,
-      cluster: clusters.get(nodeId) ?? -1,
+      inSetCitations: meta?.inSetCitations ?? 0,
+      globalCitations: meta?.globalCitations ?? null,
+      cluster: clusters.get(nodeId) ?? OTHER_CLUSTER_ID,
       degree: graph.degree(nodeId),
       x: position?.x ?? 0,
       y: position?.y ?? 0,

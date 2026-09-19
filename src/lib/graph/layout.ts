@@ -26,18 +26,34 @@ function assignCircularLayout(graph: Graph): void {
 }
 
 /**
+ * Multiplier on FA2's auto-inferred scalingRatio (repulsion strength).
+ * The inferred default packs clusters too tightly together once there are
+ * a few hundred nodes; this pushes disconnected clusters further apart so
+ * the map doesn't read as one crowded blob.
+ */
+const SCALING_RATIO_MULTIPLIER = 4
+
+/**
  * Computes a deterministic ForceAtlas2 layout: a fixed circular start plus
  * a fixed iteration count means the same graph always yields the same
  * positions.
+ *
+ * If the graph's nodes carry a `size` attribute (set by the caller before
+ * calling this — see assemble.ts), `adjustSizes` uses it to keep nodes
+ * from overlapping.
  */
 export function computeLayout(graph: Graph): Map<string, NodePosition> {
   if (graph.order === 0) return new Map()
 
   assignCircularLayout(graph)
 
+  const inferred = forceAtlas2.inferSettings(graph)
   const settings: ForceAtlas2Settings = {
-    ...forceAtlas2.inferSettings(graph),
+    ...inferred,
     edgeWeightInfluence: 1,
+    linLogMode: true,
+    adjustSizes: true,
+    scalingRatio: (inferred.scalingRatio ?? 10) * SCALING_RATIO_MULTIPLIER,
   }
 
   const positions = forceAtlas2(graph, {

@@ -40,6 +40,7 @@ export async function runSearch(query: string): Promise<void> {
       status: papers.length > 0 ? 'success' : 'empty',
       papers,
       fetchedCount: papers.length,
+      fetchedAt: new Date(),
     })
     if (papers.length > 0) buildGraphs(papers)
   } catch (err) {

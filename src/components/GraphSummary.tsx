@@ -1,3 +1,4 @@
+import { clusterDisplayLabel } from '../lib/graph/clusterDisplay'
 import { truncateTitle } from '../lib/text'
 import type { NetworkResult } from '../lib/graph/types'
 
@@ -27,7 +28,9 @@ function NetworkSummary({
         <ul className="mt-3 space-y-1.5 text-sm text-slate-700">
           {network.clusters.map((cluster) => (
             <li key={cluster.cluster}>
-              <span className="font-medium text-slate-900">Cluster {cluster.cluster}</span>{' '}
+              <span className="font-medium text-slate-900">
+                {clusterDisplayLabel(cluster.cluster)}
+              </span>{' '}
               <span className="text-slate-500">
                 ({cluster.size} {unitLabel})
               </span>

@@ -7,3 +7,13 @@ export function truncateTitle(title: string, maxLength = 120): string {
   if (title.length <= maxLength) return title
   return `${title.slice(0, maxLength).trimEnd()}…`
 }
+
+/** Escapes text for safe use inside XML element content or attribute values. */
+export function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}

@@ -1,14 +1,21 @@
 import { useMemo, useState } from 'react'
+import type { ExportContext } from '../../lib/export/exportContext'
 import type { GraphBuildResult, GraphNode, NetworkResult } from '../../lib/graph/types'
+import type { Paper } from '../../lib/openalex'
+import { computeAutoMinLinkStrength } from './autoMinLinkStrength'
 import { ClusterLegend } from './ClusterLegend'
+import { ExportMenu } from './ExportMenu'
 import { LinkStrengthSlider } from './LinkStrengthSlider'
-import { NetworkGraph } from './NetworkGraph'
+import { NetworkGraph, type NetworkSigma } from './NetworkGraph'
 import { NodeDetailsPanel } from './NodeDetailsPanel'
 
 type NetworkKind = 'coupling' | 'coCitation'
 
 interface GraphExplorerProps {
   result: GraphBuildResult
+  query: string
+  papers: Paper[]
+  fetchedAt: Date
 }
 
 const NETWORK_LABELS: Record<NetworkKind, string> = {
@@ -27,13 +34,28 @@ function maxEdgeWeight(network: NetworkResult): number {
   return network.edges.reduce((max, edge) => Math.max(max, edge.weight), 1)
 }
 
-export function GraphExplorer({ result }: GraphExplorerProps) {
+export function GraphExplorer({ result, query, papers, fetchedAt }: GraphExplorerProps) {
   const [activeNetwork, setActiveNetwork] = useState<NetworkKind>('coupling')
   const [selectedClusterId, setSelectedClusterId] = useState<number | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [minLinkStrength, setMinLinkStrength] = useState(1)
+  const [minLinkStrength, setMinLinkStrength] = useState(() =>
+    computeAutoMinLinkStrength(result.coupling.edges),
+  )
+  const [sigma, setSigma] = useState<NetworkSigma | null>(null)
 
   const network = result[activeNetwork]
+
+  const exportContext = useMemo<ExportContext>(
+    () => ({
+      query,
+      papers,
+      coupling: result.coupling,
+      coCitation: result.coCitation,
+      meta: result.meta,
+      fetchedAt,
+    }),
+    [query, papers, result, fetchedAt],
+  )
 
   // A selected cluster/node/link-strength from one network is meaningless
   // (and can look like "everything vanished") on the other, so reset as
@@ -42,7 +64,7 @@ export function GraphExplorer({ result }: GraphExplorerProps) {
     setActiveNetwork(kind)
     setSelectedClusterId(null)
     setSelectedNodeId(null)
-    setMinLinkStrength(1)
+    setMinLinkStrength(computeAutoMinLinkStrength(result[kind].edges))
   }
 
   const selectedNode = useMemo<GraphNode | null>(
@@ -51,6 +73,10 @@ export function GraphExplorer({ result }: GraphExplorerProps) {
   )
 
   const maxWeight = useMemo(() => maxEdgeWeight(network), [network])
+  const visibleEdgeCount = useMemo(
+    () => network.edges.filter((edge) => edge.weight >= minLinkStrength).length,
+    [network, minLinkStrength],
+  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -72,9 +98,24 @@ export function GraphExplorer({ result }: GraphExplorerProps) {
           ))}
         </div>
 
-        {network.edges.length > 0 && (
-          <LinkStrengthSlider value={minLinkStrength} max={maxWeight} onChange={setMinLinkStrength} />
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {network.edges.length > 0 && (
+            <LinkStrengthSlider
+              value={minLinkStrength}
+              max={maxWeight}
+              visibleEdgeCount={visibleEdgeCount}
+              onChange={setMinLinkStrength}
+            />
+          )}
+          <ExportMenu
+            context={exportContext}
+            activeNetwork={network}
+            activeNetworkLabel={NETWORK_LABELS[activeNetwork]}
+            unitLabel={UNIT_LABELS[activeNetwork]}
+            minLinkStrength={minLinkStrength}
+            sigma={sigma}
+          />
+        </div>
       </div>
 
       {network.nodes.length === 0 ? (
@@ -90,6 +131,7 @@ export function GraphExplorer({ result }: GraphExplorerProps) {
               selectedNodeId={selectedNodeId}
               minLinkStrength={minLinkStrength}
               onSelectNode={setSelectedNodeId}
+              onSigmaReady={setSigma}
             />
             <ClusterLegend
               clusters={network.clusters}

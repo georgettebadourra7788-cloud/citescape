@@ -1,4 +1,5 @@
 import { clusterColor } from '../../lib/graph/clusterColors'
+import { clusterDisplayLabel } from '../../lib/graph/clusterDisplay'
 import type { GraphNode } from '../../lib/graph/types'
 
 interface NodeDetailsPanelProps {
@@ -7,10 +8,18 @@ interface NodeDetailsPanelProps {
 }
 
 export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
+  const isUnresolved = node.resolved === false
+  // Every node gets a link: its DOI when it has one, otherwise its
+  // OpenAlex page (node.id is always a full https://openalex.org/... url).
+  const link = node.doi ?? node.id
+  const linkLabel = node.doi ? node.doi : 'View on OpenAlex'
+
   return (
     <div className="w-full shrink-0 rounded-lg border border-slate-200 p-4 sm:w-72">
       <div className="flex items-start justify-between gap-2">
-        <h4 className="font-medium text-slate-900">{node.label}</h4>
+        <h4 className="font-medium text-slate-900">
+          {isUnresolved ? 'Unknown work (no OpenAlex record)' : node.label}
+        </h4>
         <button
           type="button"
           onClick={onClose}
@@ -33,9 +42,17 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
           <dd className="text-slate-900">{node.year ?? '—'}</dd>
         </div>
         <div>
-          <dt className="text-slate-500">Citations</dt>
-          <dd className="text-slate-900">{node.citations}</dd>
+          <dt className="text-slate-500">Cited by (this set)</dt>
+          <dd className="text-slate-900">
+            {node.inSetCitations} {node.inSetCitations === 1 ? 'paper' : 'papers'}
+          </dd>
         </div>
+        {node.globalCitations !== null && (
+          <div>
+            <dt className="text-slate-500">Global citations</dt>
+            <dd className="text-slate-900">{node.globalCitations}</dd>
+          </div>
+        )}
         <div>
           <dt className="text-slate-500">Cluster</dt>
           <dd className="flex items-center gap-1.5 text-slate-900">
@@ -44,27 +61,22 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
               className="h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: clusterColor(node.cluster) }}
             />
-            Cluster {node.cluster}
+            {clusterDisplayLabel(node.cluster)}
           </dd>
         </div>
-        {node.doi && (
-          <div>
-            <dt className="text-slate-500">DOI</dt>
-            <dd>
-              <a
-                href={node.doi}
-                target="_blank"
-                rel="noreferrer"
-                className="break-all text-purple-700 hover:underline"
-              >
-                {node.doi}
-              </a>
-            </dd>
-          </div>
-        )}
-        {node.resolved === false && (
-          <p className="text-amber-700">No matching OpenAlex record was found for this item.</p>
-        )}
+        <div>
+          <dt className="text-slate-500">Link</dt>
+          <dd>
+            <a
+              href={link}
+              target="_blank"
+              rel="noreferrer"
+              className="break-all text-purple-700 hover:underline"
+            >
+              {linkLabel}
+            </a>
+          </dd>
+        </div>
       </dl>
     </div>
   )

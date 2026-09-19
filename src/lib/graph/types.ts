@@ -4,13 +4,14 @@ export interface GraphNode {
   id: string
   label: string
   year: number | null
+  /** How many papers in *our* fetched set cite this node. Always present. */
+  inSetCitations: number
   /**
-   * Coupling network: the paper's OpenAlex `cited_by_count`.
-   * Co-citation network: how many papers in *our* fetched set cite this
-   * reference (a "local" citation count — we don't fetch global counts
-   * for reference nodes, see step 5).
+   * OpenAlex's global `cited_by_count`. Only ever set for coupling nodes
+   * (our own fetched papers) — co-citation reference nodes were never
+   * fetched with this field, see step 5 — so it's null there.
    */
-  citations: number
+  globalCitations: number | null
   cluster: number
   degree: number
   x: number
@@ -34,11 +35,15 @@ export interface GraphEdge {
 }
 
 export interface ClusterSummary {
+  /** Display cluster id: 1..N by size (largest first), or 0 for "Other". */
   cluster: number
   size: number
+  /** `citations` here is globalCitations when available, else inSetCitations. */
   topPapers: { id: string; title: string; citations: number }[]
   medianYear: number | null
   topKeywords: string[]
+  /** True if every node in this cluster has resolved === false. */
+  allUnresolved: boolean
 }
 
 export interface NetworkResult {
@@ -49,9 +54,19 @@ export interface NetworkResult {
   unresolvedNodeCount?: number
 }
 
+/** The actually-applied thresholds/seeds, echoed back for reproducibility (see exports' About sheet). */
+export interface GraphBuildMeta {
+  minCouplingWeight: number
+  minCoCitationWeight: number
+  maxCoCitationNodes: number
+  louvainSeed: number
+  layoutIterations: number
+}
+
 export interface GraphBuildResult {
   coupling: NetworkResult
   coCitation: NetworkResult
+  meta: GraphBuildMeta
 }
 
 export interface GraphBuildOptions {

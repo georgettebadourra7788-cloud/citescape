@@ -1,10 +1,8 @@
 import type Graph from 'graphology'
 import { buildClusterSummaries } from './clusterSummary'
-import { citationRank } from './citationRank'
 import { OTHER_CLUSTER_ID, remapClustersForDisplay } from './clusterDisplay'
 import { computeLayout } from './layout'
 import { runLouvain } from './louvain'
-import { nodeSize } from './nodeSize'
 import type { GraphEdge, GraphNode, NetworkResult } from './types'
 
 export interface NodeMeta {
@@ -31,17 +29,10 @@ export function assembleNetwork(
   const rawClusters = runLouvain(graph)
   const clusters = remapClustersForDisplay(rawClusters)
 
-  // ForceAtlas2's adjustSizes (overlap prevention) reads each node's `size`
-  // attribute directly, so set it — on the same scale the renderer uses —
-  // before computing positions.
-  const maxRank = Math.max(0, ...[...metaById.values()].map(citationRank))
-  graph.forEachNode((nodeId) => {
-    const meta = metaById.get(nodeId)
-    const rank = meta ? citationRank(meta) : 0
-    graph.setNodeAttribute(nodeId, 'size', nodeSize(rank, maxRank))
-  })
-
-  const positions = computeLayout(graph)
+  // Layout is computed on the full graph, before any display-only
+  // filtering (e.g. the UI's minimum-link-strength slider) — that only
+  // hides edges in Sigma, so positions never change when it moves.
+  const positions = computeLayout(graph, clusters)
 
   const nodes: GraphNode[] = graph.mapNodes((nodeId): GraphNode => {
     const meta = metaById.get(nodeId)

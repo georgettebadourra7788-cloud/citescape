@@ -9,7 +9,9 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:rules": "firebase emulators:exec --only firestore \"vitest run --config vitest.rules.config.ts\""
+    "test:rules": "firebase emulators:exec --only firestore \"vitest run --config vitest.rules.config.ts\"",
+    "deploy": "npm run build && npx firebase deploy --only hosting",
+    "deploy:rules": "npx firebase deploy --only firestore:rules"
   },
   "dependencies": {
     "@sigma/export-image": "^3.0.0",

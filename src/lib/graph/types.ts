@@ -13,8 +13,18 @@ export interface GraphNode {
   citations: number
   cluster: number
   degree: number
+  x: number
+  y: number
   authors?: string[]
   doi?: string | null
+  /**
+   * Co-citation nodes only: whether the batched `ids.openalex` lookup
+   * actually returned a record for this id. `undefined`/omitted (coupling
+   * nodes, which always come from our own fetched papers) is treated as
+   * resolved. False means OpenAlex's response never included this id —
+   * distinct from OpenAlex returning a record with a blank title.
+   */
+  resolved?: boolean
 }
 
 export interface GraphEdge {
@@ -35,6 +45,8 @@ export interface NetworkResult {
   nodes: GraphNode[]
   edges: GraphEdge[]
   clusters: ClusterSummary[]
+  /** Co-citation only: how many nodes had no matching OpenAlex record. */
+  unresolvedNodeCount?: number
 }
 
 export interface GraphBuildResult {

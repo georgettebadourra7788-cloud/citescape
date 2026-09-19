@@ -37,7 +37,12 @@ export function buildClusterSummaries(
 
   const summaries: ClusterSummary[] = []
   for (const [cluster, clusterNodes] of byCluster) {
-    const topPapers = [...clusterNodes]
+    // Never let a node with no resolved OpenAlex record (resolved === false)
+    // become a cluster's top/label paper — only fall back to it if every
+    // node in the cluster is unresolved.
+    const resolvedNodes = clusterNodes.filter((node) => node.resolved !== false)
+    const topPapersSource = resolvedNodes.length > 0 ? resolvedNodes : clusterNodes
+    const topPapers = [...topPapersSource]
       .sort((a, b) => b.citations - a.citations)
       .slice(0, 5)
       .map((node) => ({ id: node.id, title: node.label, citations: node.citations }))

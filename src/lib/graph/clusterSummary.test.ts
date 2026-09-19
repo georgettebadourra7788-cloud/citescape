@@ -33,6 +33,8 @@ function node(overrides: Partial<GraphNode> & { id: string }): GraphNode {
     citations: 0,
     cluster: 0,
     degree: 1,
+    x: 0,
+    y: 0,
     ...overrides,
   }
 }

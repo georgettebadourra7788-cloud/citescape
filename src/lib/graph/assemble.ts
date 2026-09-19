@@ -1,5 +1,6 @@
 import type Graph from 'graphology'
 import { buildClusterSummaries } from './clusterSummary'
+import { computeLayout } from './layout'
 import { runLouvain } from './louvain'
 import type { GraphEdge, GraphNode, NetworkResult } from './types'
 
@@ -9,6 +10,7 @@ export interface NodeMeta {
   citations: number
   authors?: string[]
   doi?: string | null
+  resolved?: boolean
 }
 
 /**
@@ -23,9 +25,11 @@ export function assembleNetwork(
   keywordsById: Map<string, string[]>,
 ): NetworkResult {
   const clusters = runLouvain(graph)
+  const positions = computeLayout(graph)
 
   const nodes: GraphNode[] = graph.mapNodes((nodeId): GraphNode => {
     const meta = metaById.get(nodeId)
+    const position = positions.get(nodeId)
     return {
       id: nodeId,
       label: meta?.label ?? nodeId,
@@ -33,8 +37,11 @@ export function assembleNetwork(
       citations: meta?.citations ?? 0,
       cluster: clusters.get(nodeId) ?? -1,
       degree: graph.degree(nodeId),
+      x: position?.x ?? 0,
+      y: position?.y ?? 0,
       authors: meta?.authors,
       doi: meta?.doi,
+      resolved: meta?.resolved,
     }
   })
 

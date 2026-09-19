@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { truncateTitle } from '../lib/text'
 import type { Paper } from '../lib/openalex'
 
 type SortKey = 'title' | 'authors' | 'year' | 'citedByCount' | 'referencedWorks'
@@ -80,7 +81,9 @@ export function PapersTable({ papers }: PapersTableProps) {
         <tbody className="divide-y divide-slate-100">
           {sorted.map((paper) => (
             <tr key={paper.id} className="align-top">
-              <td className="max-w-md px-4 py-2 text-slate-900">{paper.title}</td>
+              <td className="max-w-md px-4 py-2 text-slate-900" title={paper.title}>
+                {truncateTitle(paper.title)}
+              </td>
               <td className="max-w-xs px-4 py-2 text-slate-600">
                 {paper.authors.length > 0 ? paper.authors.join(', ') : '—'}
               </td>

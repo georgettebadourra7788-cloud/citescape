@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { EmptyState, ErrorState, LoadingState } from './components/StatusStates'
 import { GraphSummary } from './components/GraphSummary'
+import { GraphExplorer } from './components/graphView/GraphExplorer'
 import { PapersTable } from './components/PapersTable'
 import { ResultsSummary } from './components/ResultsSummary'
 import { runSearch } from './lib/searchController'
@@ -9,6 +10,7 @@ import { useGraphStore } from './store/graphStore'
 
 function App() {
   const [topic, setTopic] = useState('')
+  const [isTableExpanded, setIsTableExpanded] = useState(false)
   const { status, query, papers, fetchedCount, targetCount, error } = usePapersStore()
   const graph = useGraphStore()
   const isLoading = status === 'loading'
@@ -65,7 +67,7 @@ function App() {
           </form>
         </div>
 
-        <div className="mt-12 w-full max-w-5xl">
+        <div className="mt-12 w-full max-w-6xl">
           {status === 'loading' && (
             <LoadingState fetchedCount={fetchedCount} targetCount={targetCount} />
           )}
@@ -76,7 +78,6 @@ function App() {
           {status === 'success' && (
             <div className="flex flex-col gap-6 text-left">
               <ResultsSummary papers={papers} />
-              <PapersTable papers={papers} />
 
               {graph.status === 'building' && (
                 <p className="text-sm text-slate-600">
@@ -89,11 +90,31 @@ function App() {
                 </p>
               )}
               {graph.status === 'success' && graph.result && (
-                <GraphSummary
-                  coupling={graph.result.coupling}
-                  coCitation={graph.result.coCitation}
-                />
+                <>
+                  <GraphSummary
+                    coupling={graph.result.coupling}
+                    coCitation={graph.result.coCitation}
+                  />
+                  <GraphExplorer result={graph.result} />
+                </>
               )}
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setIsTableExpanded((expanded) => !expanded)}
+                  className="flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-slate-900"
+                  aria-expanded={isTableExpanded}
+                >
+                  <span aria-hidden="true">{isTableExpanded ? '▾' : '▸'}</span>
+                  {isTableExpanded ? 'Hide' : 'Show'} all {papers.length} papers
+                </button>
+                {isTableExpanded && (
+                  <div className="mt-3">
+                    <PapersTable papers={papers} />
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -1,10 +1,12 @@
 /// <reference lib="webworker" />
 
 import { assembleNetwork, type NodeMeta } from '../lib/graph/assemble'
+import { stripArtifactReferences } from '../lib/graph/artifactReferences'
 import { buildCoCitationGraph } from '../lib/graph/coCitation'
 import { buildCouplingGraph } from '../lib/graph/coupling'
 import { fetchWorksByIds } from '../lib/openalex'
 import type { BuildGraphsRequest, GraphWorkerMessage } from '../lib/graph/types'
+import type { Paper } from '../lib/openalex'
 
 function post(message: GraphWorkerMessage): void {
   ;(self as unknown as DedicatedWorkerGlobalScope).postMessage(message)
@@ -12,7 +14,13 @@ function post(message: GraphWorkerMessage): void {
 
 self.onmessage = async (event: MessageEvent<BuildGraphsRequest>) => {
   if (event.data.type !== 'build') return
-  const { papers, options = {} } = event.data
+  const { papers: rawPapers, options = {} } = event.data
+  // Strip known OpenAlex data-quality artifacts (see artifactReferences.ts)
+  // before either network sees the reference lists.
+  const papers: Paper[] = rawPapers.map((p) => {
+    const referencedWorks = stripArtifactReferences(p.referencedWorks)
+    return referencedWorks === p.referencedWorks ? p : { ...p, referencedWorks }
+  })
 
   try {
     post({
@@ -64,14 +72,18 @@ self.onmessage = async (event: MessageEvent<BuildGraphsRequest>) => {
 
     const coCitationMeta = new Map<string, NodeMeta>()
     const coCitationKeywords = new Map<string, string[]>()
+    let unresolvedNodeCount = 0
     for (const refId of refIds) {
       const work = refWorks.get(refId)
+      const resolved = refWorks.has(refId)
+      if (!resolved) unresolvedNodeCount += 1
       const citers = citingPapersByRef.get(refId) ?? new Set<string>()
       coCitationMeta.set(refId, {
-        label: work?.title ?? refId,
+        label: work?.title ?? `(no OpenAlex record found for ${refId})`,
         year: work?.year ?? null,
         citations: citers.size,
         authors: work?.authors,
+        resolved,
       })
 
       const keywords: string[] = []
@@ -82,8 +94,9 @@ self.onmessage = async (event: MessageEvent<BuildGraphsRequest>) => {
       coCitationKeywords.set(refId, keywords)
     }
 
-    post({ type: 'progress', stage: 'clustering', message: 'Running clustering…' })
+    post({ type: 'progress', stage: 'clustering', message: 'Running clustering and layout…' })
     const coCitation = assembleNetwork(coCitationGraph, coCitationMeta, coCitationKeywords)
+    coCitation.unresolvedNodeCount = unresolvedNodeCount
 
     post({ type: 'done', result: { coupling, coCitation } })
   } catch (err) {

@@ -6,8 +6,10 @@ import type { NetworkResult } from '../../lib/graph/types'
 import {
   buildDisplayGraph,
   type DisplayEdgeAttributes,
+  type DisplayGraph,
   type DisplayNodeAttributes,
 } from './buildDisplayGraph'
+import { selectNonOverlappingLabels, type LabelCandidate } from './labelCollision'
 
 const LABEL_SIZE = 11
 const LABEL_TEXT_COLOR = '#0f172a' // slate-900
@@ -33,7 +35,44 @@ function drawNodeLabelWithHalo(
   context.fillText(data.label, x, y)
 }
 
+let measureCanvasContext: CanvasRenderingContext2D | null | undefined
+/** Real text metrics via an offscreen canvas — matches the font `drawNodeLabelWithHalo` draws with. */
+function measureTextWidth(text: string, fontSize: number): number {
+  if (measureCanvasContext === undefined) {
+    measureCanvasContext =
+      typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d')
+  }
+  if (measureCanvasContext) {
+    measureCanvasContext.font = `${fontSize}px sans-serif`
+    return measureCanvasContext.measureText(text).width
+  }
+  return text.length * fontSize * 0.55
+}
+
 export type NetworkSigma = Sigma<DisplayNodeAttributes, DisplayEdgeAttributes>
+
+/**
+ * Which nodes get a label right now, in screen space, so none overlap.
+ * Re-run on every camera change (see the 'updated' listener below) —
+ * zooming in spreads nodes apart on screen, which is exactly what lets
+ * more labels through without any change to the selection logic itself.
+ */
+function computeVisibleLabels(sigma: NetworkSigma, graph: DisplayGraph): Set<string> {
+  const candidates: LabelCandidate[] = []
+  graph.forEachNode((node, attrs) => {
+    if (!attrs.label) return
+    const viewport = sigma.graphToViewport({ x: attrs.x, y: attrs.y })
+    candidates.push({
+      id: node,
+      x: viewport.x,
+      y: viewport.y,
+      radius: sigma.scaleSize(attrs.size),
+      text: attrs.label,
+      priority: attrs.citations,
+    })
+  })
+  return selectNonOverlappingLabels(candidates, measureTextWidth, LABEL_SIZE)
+}
 
 /** Fits the camera to the graph's bounding box, with a small margin. */
 function fitView(sigma: NetworkSigma, options: { animate?: boolean } = {}): void {
@@ -77,6 +116,10 @@ export function NetworkGraph({
   const containerRef = useRef<HTMLDivElement>(null)
   const sigmaRef = useRef<NetworkSigma | null>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
+  // Which nodes currently get a label, recomputed on every camera change —
+  // read by the nodeReducer below (a ref so recomputing never has to wait
+  // on/trigger a React re-render just to reach the reducer).
+  const visibleLabelsRef = useRef<Set<string>>(new Set())
 
   const graph = useMemo(() => buildDisplayGraph(network), [network])
 
@@ -100,21 +143,44 @@ export function NetworkGraph({
     fitView(sigma)
     onSigmaReady?.(sigma)
 
+    // Labels depend on screen-space positions, so every pan/zoom needs a
+    // fresh collision pass — rAF-throttled since the camera can emit many
+    // 'updated' events per second during a drag or scroll-zoom.
+    let recomputeScheduled = false
+    function scheduleLabelRecompute() {
+      if (recomputeScheduled) return
+      recomputeScheduled = true
+      requestAnimationFrame(() => {
+        recomputeScheduled = false
+        visibleLabelsRef.current = computeVisibleLabels(sigma, graph)
+        sigma.refresh()
+      })
+    }
+    sigma.getCamera().on('updated', scheduleLabelRecompute)
+    // Populated synchronously (not through the throttled path above) so
+    // the very first paint already has the right labels, no flash.
+    visibleLabelsRef.current = computeVisibleLabels(sigma, graph)
+
     sigma.on('clickNode', ({ node }) => onSelectNode(node))
     sigma.on('clickStage', () => onSelectNode(null))
     sigma.on('enterNode', ({ node }) => setHoveredNodeId(node))
     sigma.on('leaveNode', () => setHoveredNodeId(null))
 
     // Keep the graph framed (and re-fit) whenever the container resizes —
-    // a window/orientation change, or the side panel opening/closing.
+    // a window/orientation change, or the side panel opening/closing. A
+    // resize can change screen-space label positions even when the camera's
+    // own state doesn't, so recompute explicitly rather than relying only
+    // on the 'updated' listener above.
     const resizeObserver = new ResizeObserver(() => {
       sigma.resize()
       fitView(sigma)
+      scheduleLabelRecompute()
     })
     resizeObserver.observe(container)
 
     return () => {
       resizeObserver.disconnect()
+      sigma.getCamera().removeListener('updated', scheduleLabelRecompute)
       sigma.kill()
       sigmaRef.current = null
       onSigmaReady?.(null)
@@ -142,7 +208,12 @@ export function NetworkGraph({
       if (node === selectedNodeId) {
         return { ...data, zIndex: 1, forceLabel: true }
       }
-      return data
+      // Default (resting) state: only nodes the last collision pass picked
+      // get a label — see computeVisibleLabels/labelCollision.ts. Forced
+      // since we've already decided this exact label shouldn't be hidden
+      // by Sigma's own density heuristic.
+      if (!visibleLabelsRef.current.has(node)) return { ...data, label: null }
+      return { ...data, forceLabel: true }
     })
 
     sigma.setSetting('edgeReducer', (edge, data): Partial<EdgeDisplayData> => {

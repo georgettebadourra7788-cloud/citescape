@@ -7,6 +7,7 @@ import {
   buildPapersRows,
 } from './excelRows'
 import { APP_VERSION } from '../appInfo'
+import { brand } from '../../brand'
 import { makePaper } from '../graph/testFixtures'
 import type { ExportContext } from './exportContext'
 import type { GraphNode, NetworkResult } from '../graph/types'
@@ -220,7 +221,7 @@ describe('buildAboutRows', () => {
     expect(byField['ForceAtlas2 layout iterations']).toBe('300')
     expect(byField['Duplicate papers merged']).toBe('0')
     expect(byField['Duplicate co-citation nodes merged']).toBe('0')
-    expect(byField['CiteScape version']).toBe(APP_VERSION)
+    expect(byField[`${brand.name} version`]).toBe(APP_VERSION)
   })
 
   it('reports how many duplicate papers/co-citation nodes were merged', () => {

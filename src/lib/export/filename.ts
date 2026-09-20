@@ -1,3 +1,5 @@
+import { brand } from '../../brand'
+
 export function slugify(text: string): string {
   const slug = text
     .toLowerCase()
@@ -8,6 +10,9 @@ export function slugify(text: string): string {
   return slug || 'query'
 }
 
+/** e.g. "citescape" — the app-name slug every export filename starts with. */
+const APP_SLUG = slugify(brand.name)
+
 export type ExportNetworkKind = 'coupling' | 'cocitation'
 
 export interface ExportFilenameOptions {
@@ -17,12 +22,12 @@ export interface ExportFilenameOptions {
 }
 
 /**
- * `citescape-<query-slug>-<date>.<ext>`, or with `network` set,
- * `citescape-<query-slug>-<coupling|cocitation>-<date>.<ext>`.
+ * `<app-slug>-<query-slug>-<date>.<ext>`, or with `network` set,
+ * `<app-slug>-<query-slug>-<coupling|cocitation>-<date>.<ext>`.
  */
 export function exportFilename(query: string, ext: string, options: ExportFilenameOptions = {}): string {
   const date = options.date ?? new Date()
   const dateStr = date.toISOString().slice(0, 10)
   const networkPart = options.network ? `-${options.network}` : ''
-  return `citescape-${slugify(query)}${networkPart}-${dateStr}.${ext}`
+  return `${APP_SLUG}-${slugify(query)}${networkPart}-${dateStr}.${ext}`
 }

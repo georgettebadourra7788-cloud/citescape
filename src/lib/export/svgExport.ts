@@ -1,3 +1,4 @@
+import { brand } from '../../brand'
 import { citationRank } from '../graph/citationRank'
 import { clusterColor, OTHER_COLOR } from '../graph/clusterColors'
 import { nodeSize } from '../graph/nodeSize'
@@ -133,7 +134,7 @@ export function buildSvg({ network, unitLabel, minLinkStrength, title, watermark
     '</g>',
     legendShapes,
     watermark
-      ? `<text x="${width - 12}" y="${height - 12}" font-size="11" font-family="sans-serif" fill="#94a3b8" text-anchor="end">Made with CiteScape</text>`
+      ? `<text x="${width - 12}" y="${height - 12}" font-size="11" font-family="sans-serif" fill="#94a3b8" text-anchor="end">Made with ${escapeXml(brand.name)}</text>`
       : '',
   ]
 

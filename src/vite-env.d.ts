@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   /** Optional contact email sent to OpenAlex's polite pool. */
   readonly VITE_OPENALEX_MAILTO?: string
+  /** General contact address shown on the Privacy/Terms pages and other support links — see src/brand.ts. */
+  readonly VITE_CONTACT_EMAIL?: string
 
   // Firebase project config — see src/lib/firebase/config.ts. All optional:
   // when any is missing, saving/accounts are disabled but the rest of the

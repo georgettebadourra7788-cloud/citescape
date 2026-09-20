@@ -1,8 +1,9 @@
 import { setGraphState } from '../store/graphStore'
+import { brand } from '../brand'
 import type { BuildGraphsRequest, GraphBuildOptions, GraphWorkerMessage } from './graph/types'
 import type { Paper } from './openalex'
 
-const mailto = import.meta.env.VITE_OPENALEX_MAILTO as string | undefined
+const mailto = brand.openAlexMailto
 
 let activeWorker: Worker | null = null
 

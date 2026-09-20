@@ -1,4 +1,5 @@
 import { APP_VERSION } from '../appInfo'
+import { brand } from '../../brand'
 import { clusterDisplayLabel } from '../graph/clusterDisplay'
 import { computeCouplingCoverage } from '../graph/couplingCoverage'
 import { computeWeightedDegree } from '../graph/weightedDegree'
@@ -214,6 +215,6 @@ export function buildAboutRows(context: ExportContext): AboutRow[] {
         'Only filled for papers that are also co-citation nodes themselves (see the ' +
         "Co-citation nodes sheet) — most papers cite references outside the set, so they won't have one.",
     },
-    { Field: 'CiteScape version', Value: APP_VERSION },
+    { Field: `${brand.name} version`, Value: APP_VERSION },
   ]
 }

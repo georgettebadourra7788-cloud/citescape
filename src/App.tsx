@@ -10,6 +10,7 @@ import { runSearch } from './lib/searchController'
 import { usePapersStore } from './store/papersStore'
 import { useGraphStore } from './store/graphStore'
 import { useActiveProjectStore } from './store/activeProjectStore'
+import { brand } from './brand'
 
 function App() {
   const [topic, setTopic] = useState('')
@@ -39,7 +40,7 @@ function App() {
       <header className="w-full border-b border-slate-200">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <span className="text-lg font-semibold text-slate-900">
-            CiteScape
+            {brand.name}
           </span>
           <AccountArea />
         </div>
@@ -48,13 +49,9 @@ function App() {
       <main className="flex w-full flex-1 flex-col items-center px-6 py-16">
         <div className="w-full max-w-2xl text-center">
           <h1 className="text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
-            See the shape of a research field
+            {brand.tagline}
           </h1>
-          <p className="mt-4 text-lg text-slate-600">
-            Type a topic and CiteScape builds a bibliometric map from
-            published research &mdash; no software to install, no citation
-            data to prepare.
-          </p>
+          <p className="mt-4 text-lg text-slate-600">{brand.shortDescription}</p>
 
           <form
             onSubmit={handleSubmit}

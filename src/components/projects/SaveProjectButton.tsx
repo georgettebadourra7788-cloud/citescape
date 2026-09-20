@@ -3,10 +3,11 @@ import { isFirebaseConfigured } from '../../lib/firebase/config'
 import { shortOpenAlexId } from '../../lib/openalex'
 import { useAuthStore } from '../../store/authStore'
 import { setActiveProjectState } from '../../store/activeProjectStore'
+import { brand } from '../../brand'
 import type { GraphBuildMeta, NetworkKind } from '../../lib/graph/types'
 import type { Paper } from '../../lib/openalex'
 
-const WAITLIST_EMAIL = import.meta.env.VITE_PRO_WAITLIST_EMAIL as string | undefined
+const WAITLIST_EMAIL = brand.proWaitlistEmail
 
 interface SaveProjectButtonProps {
   query: string

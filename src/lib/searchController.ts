@@ -2,8 +2,9 @@ import { DEFAULT_TARGET_WORKS, OpenAlexError, fetchWorksForTopic } from './opena
 import { setPapersState } from '../store/papersStore'
 import { clearActiveProject } from '../store/activeProjectStore'
 import { buildGraphs } from './graphWorkerController'
+import { brand } from '../brand'
 
-const mailto = import.meta.env.VITE_OPENALEX_MAILTO as string | undefined
+const mailto = brand.openAlexMailto
 
 let activeController: AbortController | null = null
 

@@ -1,3 +1,4 @@
+import { brand } from '../../brand'
 import { citationRank } from '../graph/citationRank'
 import { clusterColor, hexToRgb } from '../graph/clusterColors'
 import { nodeSize } from '../graph/nodeSize'
@@ -67,7 +68,7 @@ export function buildGexf(network: NetworkResult, options: GexfOptions): string 
     '<gexf xmlns="http://gexf.net/1.3" xmlns:viz="http://gexf.net/1.3/viz" ' +
     'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' +
     'xsi:schemaLocation="http://gexf.net/1.3 http://gexf.net/1.3/gexf.xsd" version="1.3">\n' +
-    `<meta lastmodifieddate="${generatedAt}"><creator>CiteScape</creator>` +
+    `<meta lastmodifieddate="${generatedAt}"><creator>${escapeXml(brand.name)}</creator>` +
     `<description>${escapeXml(options.description ?? options.title)}</description></meta>\n` +
     `<graph mode="static" defaultedgetype="undirected">\n` +
     `<attributes class="node">${attributesXml}</attributes>\n` +

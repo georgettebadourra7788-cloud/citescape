@@ -3,8 +3,9 @@ import { getProject, type ProjectRecord } from './firebase/projects'
 import { fetchPapersByIds } from './openalex'
 import { setActiveProjectState } from '../store/activeProjectStore'
 import { setPapersState } from '../store/papersStore'
+import { brand } from '../brand'
 
-const mailto = import.meta.env.VITE_OPENALEX_MAILTO as string | undefined
+const mailto = brand.openAlexMailto
 
 /**
  * Reopens a saved project: reads its stored IDs/settings from Firestore,

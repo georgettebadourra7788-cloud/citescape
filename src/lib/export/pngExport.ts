@@ -1,4 +1,5 @@
 import { drawOnCanvas } from '@sigma/export-image'
+import { brand } from '../../brand'
 import { citationRank } from '../graph/citationRank'
 import { buildLegendEntries } from './legendEntries'
 import { triggerDownload } from './download'
@@ -148,7 +149,7 @@ export async function exportPng(
     ctx.font = `${11 * RESOLUTION_SCALE}px sans-serif`
     ctx.textAlign = 'right'
     ctx.fillText(
-      'Made with CiteScape',
+      `Made with ${brand.name}`,
       outCanvas.width - 12 * RESOLUTION_SCALE,
       outCanvas.height - 12 * RESOLUTION_SCALE,
     )

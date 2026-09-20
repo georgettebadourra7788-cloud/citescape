@@ -8,6 +8,8 @@ export interface ExportContext {
   coupling: NetworkResult
   coCitation: NetworkResult
   meta: GraphBuildMeta
+  /** Survivor paper id -> ids of the other fetched papers merged into it — see duplicates.ts. */
+  duplicatePapers: Record<string, string[]>
   fetchedAt: Date
   /**
    * 'live' for data just fetched from a fresh topic search; 'cache' for a

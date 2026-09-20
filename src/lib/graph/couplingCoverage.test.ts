@@ -26,6 +26,7 @@ describe('computeCouplingCoverage', () => {
       shownPapers: 2,
       notShownNoReferences: 0,
       notShownBelowThreshold: 0,
+      notShownMergedDuplicate: 0,
     })
   })
 
@@ -47,7 +48,20 @@ describe('computeCouplingCoverage', () => {
       shownPapers: 1,
       notShownNoReferences: 1,
       notShownBelowThreshold: 1,
+      notShownMergedDuplicate: 0,
     })
+  })
+
+  it('counts a paper merged into a duplicate separately, even though it has references', () => {
+    const papers = [
+      makePaper({ id: 'shown', referencedWorks: ['R1', 'R2'] }),
+      makePaper({ id: 'merged-away', referencedWorks: ['R1', 'R2'] }),
+    ]
+    const coverage = computeCouplingCoverage(papers, [node('shown')], new Set(['merged-away']))
+
+    expect(coverage.notShownMergedDuplicate).toBe(1)
+    expect(coverage.notShownNoReferences).toBe(0)
+    expect(coverage.notShownBelowThreshold).toBe(0)
   })
 
   it('handles an empty paper set', () => {
@@ -56,6 +70,7 @@ describe('computeCouplingCoverage', () => {
       shownPapers: 0,
       notShownNoReferences: 0,
       notShownBelowThreshold: 0,
+      notShownMergedDuplicate: 0,
     })
   })
 })

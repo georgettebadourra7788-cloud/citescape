@@ -15,18 +15,24 @@ export interface NodeMeta {
   resolved?: boolean
 }
 
+export interface AssembleNetworkResult {
+  network: NetworkResult
+  louvain: { seed: number; modularity: number; runs: number }
+}
+
 /**
  * Runs Louvain on `graph` and assembles the final node/edge/cluster-summary
  * shape described in the CLAUDE.md build order, using the given metadata
  * and keyword lookups (callers supply these differently for the coupling
- * vs. co-citation networks — see the worker).
+ * vs. co-citation networks — see the worker). Also returns the winning
+ * Louvain run's seed/modularity/run-count, for the About sheet.
  */
 export function assembleNetwork(
   graph: Graph,
   metaById: Map<string, NodeMeta>,
   keywordsById: Map<string, string[]>,
-): NetworkResult {
-  const rawClusters = runLouvain(graph)
+): AssembleNetworkResult {
+  const { communities: rawClusters, seed, modularity, runs } = runLouvain(graph)
   const clusters = remapClustersForDisplay(rawClusters)
 
   // Layout is computed on the full graph, before any display-only
@@ -63,5 +69,8 @@ export function assembleNetwork(
 
   const clusterSummaries = buildClusterSummaries(nodes, keywordsById)
 
-  return { nodes, edges, clusters: clusterSummaries }
+  return {
+    network: { nodes, edges, clusters: clusterSummaries },
+    louvain: { seed, modularity, runs },
+  }
 }

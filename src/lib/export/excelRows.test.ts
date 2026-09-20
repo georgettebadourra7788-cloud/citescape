@@ -91,9 +91,16 @@ const context: ExportContext = {
     minCouplingWeight: 2,
     minCoCitationWeight: 2,
     maxCoCitationNodes: 200,
-    louvainSeed: 42,
     layoutIterations: 300,
+    louvainRuns: 10,
+    couplingLouvainSeed: 42,
+    couplingModularity: 0.4231,
+    coCitationLouvainSeed: 45,
+    coCitationModularity: 0.3102,
+    duplicatePapersMerged: 0,
+    coCitationNodesMerged: 0,
   },
+  duplicatePapers: {},
   fetchedAt: new Date('2026-09-19T12:00:00Z'),
   dataSource: 'live',
   figure: {
@@ -118,6 +125,7 @@ describe('buildPapersRows', () => {
         Citations: 42,
         'Coupling cluster': 'Cluster 1',
         'Co-citation cluster': '', // P1 isn't itself a co-citation node
+        'Merged duplicate IDs': '',
       },
       {
         'OpenAlex ID': 'P2',
@@ -129,8 +137,26 @@ describe('buildPapersRows', () => {
         Citations: 7,
         'Coupling cluster': 'Cluster 1',
         'Co-citation cluster': '',
+        'Merged duplicate IDs': '',
       },
     ])
+  })
+
+  it("lists the merged-away ids on the survivor's row, and leaves other rows' cluster blank", () => {
+    const contextWithDuplicate: ExportContext = {
+      ...context,
+      papers: [...papers, makePaper({ id: 'P1-dup', title: 'Paper One (dup)', year: 2019 })],
+      duplicatePapers: { P1: ['P1-dup'] },
+    }
+
+    const rows = buildPapersRows(contextWithDuplicate)
+    const byId = Object.fromEntries(rows.map((r) => [r['OpenAlex ID'], r]))
+
+    expect(byId['P1']['Merged duplicate IDs']).toBe('P1-dup')
+    // The merged-away paper still gets its own row (documenting the raw
+    // fetch), but isn't a coupling-graph node of its own anymore.
+    expect(byId['P1-dup']['Coupling cluster']).toBe('')
+    expect(byId['P1-dup']['Merged duplicate IDs']).toBe('')
   })
 })
 
@@ -186,9 +212,27 @@ describe('buildAboutRows', () => {
     expect(byField['Bibliographic coupling: minimum shared references']).toBe('2')
     expect(byField['Co-citation: minimum co-citation count']).toBe('2')
     expect(byField['Co-citation: max nodes']).toBe('200')
-    expect(byField['Louvain clustering seed']).toBe('42')
+    expect(byField['Louvain seeds tried per network']).toBe('10')
+    expect(byField['Bibliographic coupling: Louvain seed used']).toBe('42')
+    expect(byField['Bibliographic coupling: modularity']).toBe('0.4231')
+    expect(byField['Co-citation: Louvain seed used']).toBe('45')
+    expect(byField['Co-citation: modularity']).toBe('0.3102')
     expect(byField['ForceAtlas2 layout iterations']).toBe('300')
+    expect(byField['Duplicate papers merged']).toBe('0')
+    expect(byField['Duplicate co-citation nodes merged']).toBe('0')
     expect(byField['CiteScape version']).toBe(APP_VERSION)
+  })
+
+  it('reports how many duplicate papers/co-citation nodes were merged', () => {
+    const contextWithMerges: ExportContext = {
+      ...context,
+      meta: { ...context.meta, duplicatePapersMerged: 3, coCitationNodesMerged: 2 },
+    }
+    const rows = buildAboutRows(contextWithMerges)
+    const byField = Object.fromEntries(rows.map((r) => [r.Field, r.Value]))
+
+    expect(byField['Duplicate papers merged']).toBe('3')
+    expect(byField['Duplicate co-citation nodes merged']).toBe('2')
   })
 
   it('includes the current figure\'s network, minimum link strength, and visible edge count', () => {
@@ -235,14 +279,16 @@ describe('buildAboutRows', () => {
     expect(byField['Papers not shown in coupling map']).toBe('0')
   })
 
-  it('breaks down papers missing from the coupling map by reason', () => {
+  it('breaks down papers missing from the coupling map by reason, including merged duplicates', () => {
     const contextWithGaps: ExportContext = {
       ...context,
       papers: [
         ...papers,
         makePaper({ id: 'P3', title: 'No references', referencedWorks: [] }),
         makePaper({ id: 'P4', title: 'Too few shared refs', referencedWorks: ['R9'] }),
+        makePaper({ id: 'P5', title: 'Merged away', referencedWorks: ['R1'] }),
       ],
+      duplicatePapers: { P1: ['P5'] },
     }
 
     const rows = buildAboutRows(contextWithGaps)
@@ -250,7 +296,8 @@ describe('buildAboutRows', () => {
 
     expect(byField['Papers shown in coupling map']).toBe('2')
     expect(byField['Papers not shown in coupling map']).toBe(
-      '2 (1 with no reference list, 1 below the minimum shared-reference threshold)',
+      '3 (1 with no reference list, 1 below the minimum shared-reference threshold, ' +
+        '1 merged into a duplicate record)',
     )
   })
 })

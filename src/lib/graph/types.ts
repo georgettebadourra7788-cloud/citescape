@@ -62,14 +62,27 @@ export interface GraphBuildMeta {
   minCouplingWeight: number
   minCoCitationWeight: number
   maxCoCitationNodes: number
-  louvainSeed: number
   layoutIterations: number
+  /** How many fixed seeds Louvain tried per network — see LOUVAIN_SEEDS. */
+  louvainRuns: number
+  /** Which of those seeds produced the coupling network's highest-modularity partition. */
+  couplingLouvainSeed: number
+  couplingModularity: number
+  /** Which of those seeds produced the co-citation network's highest-modularity partition. */
+  coCitationLouvainSeed: number
+  coCitationModularity: number
+  /** How many fetched papers were merged into another paper as duplicates — see duplicates.ts. */
+  duplicatePapersMerged: number
+  /** How many co-citation reference nodes were merged as duplicates of another reference node. */
+  coCitationNodesMerged: number
 }
 
 export interface GraphBuildResult {
   coupling: NetworkResult
   coCitation: NetworkResult
   meta: GraphBuildMeta
+  /** Survivor paper id -> ids of the other fetched papers merged into it — see duplicates.ts. */
+  duplicatePapers: Record<string, string[]>
 }
 
 export interface GraphBuildOptions {

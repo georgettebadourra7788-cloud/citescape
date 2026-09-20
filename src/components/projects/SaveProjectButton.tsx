@@ -66,7 +66,7 @@ export function SaveProjectButton({
           minCouplingWeight: meta.minCouplingWeight,
           minCoCitationWeight: meta.minCoCitationWeight,
           maxCoCitationNodes: meta.maxCoCitationNodes,
-          louvainSeed: meta.louvainSeed,
+          louvainSeed: meta.couplingLouvainSeed,
           layoutIterations: meta.layoutIterations,
           minLinkStrength,
           activeNetwork,

@@ -15,6 +15,7 @@ export interface PapersRow {
   Citations: number
   'Coupling cluster': string
   'Co-citation cluster': string
+  'Merged duplicate IDs': string
 }
 
 /**
@@ -22,6 +23,12 @@ export interface PapersRow {
  * the order OpenAlex returned them in (relevance-sorted) — so together
  * with `OpenAlex ID` the exact fetched set can be rebuilt in the same
  * order without re-running the search.
+ *
+ * `Merged duplicate IDs` is only filled on the row of the paper that
+ * *survived* a duplicate merge (see duplicates.ts) — the other IDs it
+ * absorbed. Those other papers still get their own row here (this sheet
+ * documents everything fetched), but with no coupling cluster of their
+ * own, since they aren't a separate node in the map anymore.
  */
 export function buildPapersRows(context: ExportContext): PapersRow[] {
   const couplingByPaper = new Map(context.coupling.nodes.map((n) => [n.id, n]))
@@ -37,6 +44,7 @@ export function buildPapersRows(context: ExportContext): PapersRow[] {
     Citations: paper.citedByCount,
     'Coupling cluster': couplingLabel(couplingByPaper.get(paper.id)?.cluster),
     'Co-citation cluster': couplingLabel(coCitationByPaper.get(paper.id)?.cluster),
+    'Merged duplicate IDs': (context.duplicatePapers[paper.id] ?? []).join(', '),
   }))
 }
 
@@ -137,7 +145,8 @@ export interface AboutRow {
 
 export function buildAboutRows(context: ExportContext): AboutRow[] {
   const { figure } = context
-  const coverage = computeCouplingCoverage(context.papers, context.coupling.nodes)
+  const mergedAwayIds = new Set(Object.values(context.duplicatePapers).flat())
+  const coverage = computeCouplingCoverage(context.papers, context.coupling.nodes, mergedAwayIds)
   const notShown = coverage.totalPapers - coverage.shownPapers
   return [
     { Field: 'Query', Value: context.query },
@@ -158,7 +167,8 @@ export function buildAboutRows(context: ExportContext): AboutRow[] {
         notShown === 0
           ? '0'
           : `${notShown} (${coverage.notShownNoReferences} with no reference list, ` +
-            `${coverage.notShownBelowThreshold} below the minimum shared-reference threshold)`,
+            `${coverage.notShownBelowThreshold} below the minimum shared-reference threshold, ` +
+            `${coverage.notShownMergedDuplicate} merged into a duplicate record)`,
     },
     {
       Field: 'Bibliographic coupling: minimum shared references',
@@ -169,8 +179,23 @@ export function buildAboutRows(context: ExportContext): AboutRow[] {
       Value: String(context.meta.minCoCitationWeight),
     },
     { Field: 'Co-citation: max nodes', Value: String(context.meta.maxCoCitationNodes) },
-    { Field: 'Louvain clustering seed', Value: String(context.meta.louvainSeed) },
+    { Field: 'Louvain seeds tried per network', Value: String(context.meta.louvainRuns) },
+    {
+      Field: 'Bibliographic coupling: Louvain seed used',
+      Value: String(context.meta.couplingLouvainSeed),
+    },
+    {
+      Field: 'Bibliographic coupling: modularity',
+      Value: context.meta.couplingModularity.toFixed(4),
+    },
+    {
+      Field: 'Co-citation: Louvain seed used',
+      Value: String(context.meta.coCitationLouvainSeed),
+    },
+    { Field: 'Co-citation: modularity', Value: context.meta.coCitationModularity.toFixed(4) },
     { Field: 'ForceAtlas2 layout iterations', Value: String(context.meta.layoutIterations) },
+    { Field: 'Duplicate papers merged', Value: String(context.meta.duplicatePapersMerged) },
+    { Field: 'Duplicate co-citation nodes merged', Value: String(context.meta.coCitationNodesMerged) },
     { Field: 'Figure network', Value: figure.networkLabel },
     { Field: 'Figure minimum link strength', Value: String(figure.minLinkStrength) },
     {

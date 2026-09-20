@@ -5,16 +5,20 @@ import type { Paper } from '../lib/openalex'
 interface DataNotesPanelProps {
   papers: Paper[]
   couplingNodes: GraphNode[]
+  /** Survivor paper id -> ids of the other fetched papers merged into it — see duplicates.ts. */
+  duplicatePapers: Record<string, string[]>
 }
 
 /**
  * Explains any gap between "papers fetched" and "papers shown in the
- * coupling map" — silently dropping papers with no references, or too few
- * shared references to clear the minimum threshold, would otherwise look
- * like data loss. Renders nothing once everything is accounted for.
+ * coupling map" — silently dropping papers with no references, too few
+ * shared references to clear the minimum threshold, or merged into a
+ * duplicate record, would otherwise look like data loss. Renders nothing
+ * once everything is accounted for.
  */
-export function DataNotesPanel({ papers, couplingNodes }: DataNotesPanelProps) {
-  const coverage = computeCouplingCoverage(papers, couplingNodes)
+export function DataNotesPanel({ papers, couplingNodes, duplicatePapers }: DataNotesPanelProps) {
+  const mergedAwayIds = new Set(Object.values(duplicatePapers).flat())
+  const coverage = computeCouplingCoverage(papers, couplingNodes, mergedAwayIds)
   const notShown = coverage.totalPapers - coverage.shownPapers
   if (notShown === 0) return null
 
@@ -25,6 +29,11 @@ export function DataNotesPanel({ papers, couplingNodes }: DataNotesPanelProps) {
   if (coverage.notShownBelowThreshold > 0) {
     reasons.push(
       `${coverage.notShownBelowThreshold} share too few references with any other paper`,
+    )
+  }
+  if (coverage.notShownMergedDuplicate > 0) {
+    reasons.push(
+      `${coverage.notShownMergedDuplicate} ${coverage.notShownMergedDuplicate === 1 ? 'was' : 'were'} merged into a duplicate record`,
     )
   }
 

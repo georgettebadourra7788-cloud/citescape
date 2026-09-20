@@ -101,6 +101,7 @@ export function GraphExplorer({
       coupling: result.coupling,
       coCitation: result.coCitation,
       meta: result.meta,
+      duplicatePapers: result.duplicatePapers,
       fetchedAt,
       dataSource,
       figure: {

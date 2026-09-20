@@ -108,7 +108,11 @@ function App() {
                     coupling={graph.result.coupling}
                     coCitation={graph.result.coCitation}
                   />
-                  <DataNotesPanel papers={papers} couplingNodes={graph.result.coupling.nodes} />
+                  <DataNotesPanel
+                    papers={papers}
+                    couplingNodes={graph.result.coupling.nodes}
+                    duplicatePapers={graph.result.duplicatePapers}
+                  />
                   <GraphExplorer
                     result={graph.result}
                     query={query}

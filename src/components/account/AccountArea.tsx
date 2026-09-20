@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
 import { isFirebaseConfigured } from '../../lib/firebase/config'
+import { useAuthStore } from '../../store/authStore'
+import { Link } from '../Link'
 import { AccountMenu } from './AccountMenu'
 
 /**
@@ -14,6 +16,8 @@ import { AccountMenu } from './AccountMenu'
  * compete with the search box and map, which work with no login at all.
  */
 export function AccountArea() {
+  const auth = useAuthStore()
+
   useEffect(() => {
     if (!isFirebaseConfigured) return
     const load = () => {
@@ -31,5 +35,19 @@ export function AccountArea() {
     return <span className="text-xs text-slate-400">Saving isn&rsquo;t configured</span>
   }
 
-  return <AccountMenu />
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <AccountMenu />
+      {auth.status === 'signed-out' && (
+        <p className="flex gap-2 text-xs text-slate-400">
+          <Link to="/privacy" className="hover:text-slate-600 hover:underline">
+            Privacy
+          </Link>
+          <Link to="/terms" className="hover:text-slate-600 hover:underline">
+            Terms
+          </Link>
+        </p>
+      )}
+    </div>
+  )
 }

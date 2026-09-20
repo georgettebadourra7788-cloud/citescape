@@ -4,15 +4,20 @@ import { DataNotesPanel } from './components/DataNotesPanel'
 import { EmptyState, ErrorState, LoadingState } from './components/StatusStates'
 import { GraphSummary } from './components/GraphSummary'
 import { GraphExplorer } from './components/graphView/GraphExplorer'
+import { Link } from './components/Link'
 import { PapersTable } from './components/PapersTable'
+import { PrivacyPage } from './components/legal/PrivacyPage'
+import { TermsPage } from './components/legal/TermsPage'
 import { ResultsSummary } from './components/ResultsSummary'
 import { runSearch } from './lib/searchController'
 import { usePapersStore } from './store/papersStore'
 import { useGraphStore } from './store/graphStore'
 import { useActiveProjectStore } from './store/activeProjectStore'
+import { usePathname } from './store/routeStore'
 import { brand } from './brand'
 
 function App() {
+  const pathname = usePathname()
   const [topic, setTopic] = useState('')
   const [isTableExpanded, setIsTableExpanded] = useState(false)
   const { status, query, papers, fetchedCount, targetCount, error, fetchedAt, source } =
@@ -20,6 +25,9 @@ function App() {
   const graph = useGraphStore()
   const activeProject = useActiveProjectStore()
   const isLoading = status === 'loading'
+
+  if (pathname === '/privacy') return <PrivacyPage />
+  if (pathname === '/terms') return <TermsPage />
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -143,7 +151,15 @@ function App() {
       </main>
 
       <footer className="w-full border-t border-slate-200 py-6 text-center text-sm text-slate-400">
-        Built on open citation data from OpenAlex.
+        <p>Built on open citation data from OpenAlex.</p>
+        <p className="mt-2 flex items-center justify-center gap-4">
+          <Link to="/privacy" className="hover:text-slate-600 hover:underline">
+            Privacy
+          </Link>
+          <Link to="/terms" className="hover:text-slate-600 hover:underline">
+            Terms
+          </Link>
+        </p>
       </footer>
     </div>
   )

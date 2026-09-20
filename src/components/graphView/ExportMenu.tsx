@@ -56,7 +56,7 @@ export function ExportMenu({
           const { exportPng } = await import('../../lib/export/pngExport')
           if (!sigma) return
           await exportPng(
-            { sigma, clusters: activeNetwork.clusters, unitLabel, title, watermark: !isPro },
+            { sigma, network: activeNetwork, unitLabel, title, watermark: !isPro },
             context.query,
             networkKind,
           )

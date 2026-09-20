@@ -1,5 +1,6 @@
 import { APP_VERSION } from '../appInfo'
 import { clusterDisplayLabel } from '../graph/clusterDisplay'
+import { computeCouplingCoverage } from '../graph/couplingCoverage'
 import type { ExportContext } from './exportContext'
 import type { NetworkResult } from '../graph/types'
 
@@ -129,11 +130,22 @@ export interface AboutRow {
 
 export function buildAboutRows(context: ExportContext): AboutRow[] {
   const { figure } = context
+  const coverage = computeCouplingCoverage(context.papers, context.coupling.nodes)
+  const notShown = coverage.totalPapers - coverage.shownPapers
   return [
     { Field: 'Query', Value: context.query },
     { Field: 'Date fetched', Value: context.fetchedAt.toISOString() },
     { Field: 'Data source', Value: 'OpenAlex (https://openalex.org)' },
     { Field: 'Papers fetched', Value: String(context.papers.length) },
+    { Field: 'Papers shown in coupling map', Value: String(coverage.shownPapers) },
+    {
+      Field: 'Papers not shown in coupling map',
+      Value:
+        notShown === 0
+          ? '0'
+          : `${notShown} (${coverage.notShownNoReferences} with no reference list, ` +
+            `${coverage.notShownBelowThreshold} below the minimum shared-reference threshold)`,
+    },
     {
       Field: 'Bibliographic coupling: minimum shared references',
       Value: String(context.meta.minCouplingWeight),

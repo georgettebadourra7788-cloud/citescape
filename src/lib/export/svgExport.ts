@@ -4,7 +4,8 @@ import { nodeSize } from '../graph/nodeSize'
 import { buildLegendEntries } from './legendEntries'
 import { downloadText } from './download'
 import { exportFilename, type ExportNetworkKind } from './filename'
-import { escapeXml, truncateTitle } from '../text'
+import { LABEL_FONT_SIZE, placeLabels } from './labelPlacement'
+import { escapeXml } from '../text'
 import type { NetworkResult } from '../graph/types'
 
 const MAP_SIZE = 1400
@@ -12,10 +13,14 @@ const LEGEND_WIDTH = 380
 const TITLE_HEIGHT = 56
 const EDGE_COLOR = '#64748b' // slate-500
 const LABEL_COLOR = '#0f172a' // slate-900
-const LABEL_FONT_SIZE = 11
-/** One label per cluster's top item, but capped so the map doesn't get busy. */
-const MAX_LABELS = 12
+const LABEL_HALO_COLOR = '#ffffff'
 
+/**
+ * Maps graph-space coordinates into the SVG's pixel square. Sigma renders
+ * with y pointing *up* (see NetworkGraph/PNG export, whose on-screen and
+ * exported orientation both come straight from Sigma) while SVG's y points
+ * *down* — flip it here so this export isn't a vertical mirror of the map.
+ */
 function fitTransform(nodes: { x: number; y: number }[], size: number, padding = 0.08) {
   const xs = nodes.map((n) => n.x)
   const ys = nodes.map((n) => n.y)
@@ -29,33 +34,8 @@ function fitTransform(nodes: { x: number; y: number }[], size: number, padding =
   const scale = size / span
   return (x: number, y: number) => ({
     x: size / 2 + (x - cx) * scale,
-    y: size / 2 + (y - cy) * scale,
+    y: size / 2 - (y - cy) * scale,
   })
-}
-
-let measureCanvasContext: CanvasRenderingContext2D | null | undefined
-/** Real text metrics when a canvas is available (always true in-app); a rough estimate otherwise (e.g. tests). */
-function measureTextWidth(text: string, fontSize: number): number {
-  if (measureCanvasContext === undefined) {
-    measureCanvasContext =
-      typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d')
-  }
-  if (measureCanvasContext) {
-    measureCanvasContext.font = `${fontSize}px sans-serif`
-    return measureCanvasContext.measureText(text).width
-  }
-  return text.length * fontSize * 0.55
-}
-
-interface Box {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-function boxesOverlap(a: Box, b: Box): boolean {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
 }
 
 export interface SvgExportOptions {
@@ -99,49 +79,31 @@ export function buildSvg({ network, unitLabel, minLinkStrength, title, watermark
     })
     .join('\n')
 
-  // Candidate labels: one per cluster's top item, biggest clusters first
-  // (network.clusters is already sorted that way, "Other" last). Greedily
-  // place up to MAX_LABELS, skipping any whose bounding box would collide
-  // with an already-placed label.
-  const nodeById = new Map(network.nodes.map((n) => [n.id, n]))
-  const placedBoxes: Box[] = []
-  const labelTextByNodeId = new Map<string, string>()
-  for (const cluster of network.clusters) {
-    if (labelTextByNodeId.size >= MAX_LABELS) break
-    const candidateId = cluster.topPapers[0]?.id
-    if (!candidateId) continue
-    const node = nodeById.get(candidateId)
-    if (!node || node.resolved === false) continue
-
-    const p = transform(node.x, node.y)
-    const r = nodeSize(citationRank(node), maxRank)
-    const text = truncateTitle(node.label, 60)
-    const textWidth = measureTextWidth(text, LABEL_FONT_SIZE)
-    const box: Box = {
-      x: p.x + r + 4,
-      y: p.y - LABEL_FONT_SIZE,
-      width: textWidth,
-      height: LABEL_FONT_SIZE * 1.3,
-    }
-    if (placedBoxes.some((placed) => boxesOverlap(placed, box))) continue
-
-    placedBoxes.push(box)
-    labelTextByNodeId.set(candidateId, text)
-  }
-
   const nodeShapes = network.nodes
     .map((node) => {
       const p = transform(node.x, node.y)
       const r = nodeSize(citationRank(node), maxRank)
       const fill = node.resolved === false ? OTHER_COLOR : clusterColor(node.cluster)
-      const circle = `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${fill}" fill-opacity="0.85"/>`
-      const labelText = labelTextByNodeId.get(node.id)
-      if (!labelText) return circle
-      const label = escapeXml(labelText)
-      const text =
-        `<text x="${(p.x + r + 4).toFixed(1)}" y="${(p.y + 4).toFixed(1)}" font-size="${LABEL_FONT_SIZE}" font-family="sans-serif" ` +
-        `fill="${LABEL_COLOR}" stroke="#ffffff" stroke-width="3" paint-order="stroke fill">${label}</text>`
-      return circle + '\n' + text
+      return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${fill}" fill-opacity="0.85"/>`
+    })
+    .join('\n')
+
+  // Labels are drawn in their own layer, after every node and edge, so a
+  // later-drawn node circle can never paint over an earlier label (SVG
+  // paints strictly in document order) — same candidate selection and
+  // collision-avoidance as the PNG export (see labelPlacement.ts).
+  const nodeById = new Map(network.nodes.map((n) => [n.id, n]))
+  const placedLabels = placeLabels(network.clusters, nodeById, transform, maxRank)
+  const labelShapes = placedLabels
+    .map(({ text, box, x, y }) => {
+      const label = escapeXml(text)
+      const haloPad = 2
+      const rect =
+        `<rect x="${(box.x - haloPad).toFixed(1)}" y="${box.y.toFixed(1)}" width="${(box.width + haloPad * 2).toFixed(1)}" ` +
+        `height="${box.height.toFixed(1)}" fill="${LABEL_HALO_COLOR}" fill-opacity="0.85"/>`
+      const textEl =
+        `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${LABEL_FONT_SIZE}" font-family="sans-serif" fill="${LABEL_COLOR}">${label}</text>`
+      return rect + '\n' + textEl
     })
     .join('\n')
 
@@ -167,6 +129,7 @@ export function buildSvg({ network, unitLabel, minLinkStrength, title, watermark
     `<g transform="translate(0, ${TITLE_HEIGHT})">`,
     edgeShapes,
     nodeShapes,
+    labelShapes,
     '</g>',
     legendShapes,
     watermark

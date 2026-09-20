@@ -204,6 +204,33 @@ describe('buildAboutRows', () => {
       /only filled for papers/i,
     )
   })
+
+  it('reports zero papers missing from the coupling map when every fetched paper is shown', () => {
+    const rows = buildAboutRows(context)
+    const byField = Object.fromEntries(rows.map((r) => [r.Field, r.Value]))
+
+    expect(byField['Papers shown in coupling map']).toBe('2')
+    expect(byField['Papers not shown in coupling map']).toBe('0')
+  })
+
+  it('breaks down papers missing from the coupling map by reason', () => {
+    const contextWithGaps: ExportContext = {
+      ...context,
+      papers: [
+        ...papers,
+        makePaper({ id: 'P3', title: 'No references', referencedWorks: [] }),
+        makePaper({ id: 'P4', title: 'Too few shared refs', referencedWorks: ['R9'] }),
+      ],
+    }
+
+    const rows = buildAboutRows(contextWithGaps)
+    const byField = Object.fromEntries(rows.map((r) => [r.Field, r.Value]))
+
+    expect(byField['Papers shown in coupling map']).toBe('2')
+    expect(byField['Papers not shown in coupling map']).toBe(
+      '2 (1 with no reference list, 1 below the minimum shared-reference threshold)',
+    )
+  })
 })
 
 describe('buildCoCitationNodesRows', () => {

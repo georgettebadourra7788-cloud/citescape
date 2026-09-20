@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { AccountArea } from './components/account/AccountArea'
+import { DataNotesPanel } from './components/DataNotesPanel'
 import { EmptyState, ErrorState, LoadingState } from './components/StatusStates'
 import { GraphSummary } from './components/GraphSummary'
 import { GraphExplorer } from './components/graphView/GraphExplorer'
@@ -107,6 +108,7 @@ function App() {
                     coupling={graph.result.coupling}
                     coCitation={graph.result.coCitation}
                   />
+                  <DataNotesPanel papers={papers} couplingNodes={graph.result.coupling.nodes} />
                   <GraphExplorer
                     result={graph.result}
                     query={query}

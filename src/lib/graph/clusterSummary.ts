@@ -9,17 +9,57 @@ export function median(nums: number[]): number | null {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
 }
 
-export function topKeywordsByFrequency(keywordLists: string[][], limit = 5): string[] {
+/** Counts, for each term, how many keyword lists (papers) contain it at least once. */
+function countTermDocFrequency(keywordLists: string[][]): Map<string, number> {
   const counts = new Map<string, number>()
   for (const list of keywordLists) {
-    for (const keyword of list) {
-      counts.set(keyword, (counts.get(keyword) ?? 0) + 1)
+    for (const term of new Set(list)) {
+      counts.set(term, (counts.get(term) ?? 0) + 1)
     }
   }
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
+  return counts
+}
+
+export interface DistinctivenessOptions {
+  /** A term must appear in at least this many of the cluster's papers to be considered. */
+  minCount?: number
+  limit?: number
+}
+
+/**
+ * Ranks terms by distinctiveness — the share of the cluster's papers that
+ * have the term, divided by the share of *all* papers that have it —
+ * rather than raw frequency, so a term common across the whole set (e.g.
+ * the query topic itself) doesn't dominate every cluster's keyword list.
+ */
+export function topKeywordsByDistinctiveness(
+  clusterKeywordLists: string[][],
+  allKeywordLists: string[][],
+  options: DistinctivenessOptions = {},
+): string[] {
+  const minCount = options.minCount ?? 3
+  const limit = options.limit ?? 5
+
+  const clusterCounts = countTermDocFrequency(clusterKeywordLists)
+  const globalCounts = countTermDocFrequency(allKeywordLists)
+  const clusterSize = clusterKeywordLists.length || 1
+  const globalSize = allKeywordLists.length || 1
+
+  const scored: { term: string; score: number; count: number }[] = []
+  for (const [term, count] of clusterCounts) {
+    if (count < minCount) continue
+    const clusterShare = count / clusterSize
+    // globalCounts always has an entry >= count for this term, since the
+    // cluster's papers are themselves part of `allKeywordLists` — the
+    // fallback just guards against a caller passing mismatched lists.
+    const globalShare = (globalCounts.get(term) ?? count) / globalSize
+    scored.push({ term, score: globalShare > 0 ? clusterShare / globalShare : Infinity, count })
+  }
+
+  return scored
+    .sort((a, b) => b.score - a.score || b.count - a.count || a.term.localeCompare(b.term))
     .slice(0, limit)
-    .map(([keyword]) => keyword)
+    .map((s) => s.term)
 }
 
 /** Groups nodes by cluster and computes each cluster's summary stats. */
@@ -36,6 +76,8 @@ export function buildClusterSummaries(
     }
     clusterNodes.push(node)
   }
+
+  const allKeywordLists = nodes.map((node) => keywordsById.get(node.id) ?? [])
 
   const summaries: ClusterSummary[] = []
   for (const [cluster, clusterNodes] of byCluster) {
@@ -54,8 +96,9 @@ export function buildClusterSummaries(
       clusterNodes.map((node) => node.year).filter((year): year is number => year !== null),
     )
 
-    const topKeywords = topKeywordsByFrequency(
+    const topKeywords = topKeywordsByDistinctiveness(
       clusterNodes.map((node) => keywordsById.get(node.id) ?? []),
+      allKeywordLists,
     )
 
     summaries.push({

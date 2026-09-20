@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   chooseLegendPlacement,
+  computeBesideLegendPositions,
+  computeBelowLegendPositions,
   computeLegendGridLayout,
   computeMapCanvasSize,
+  legendDotBoundingBox,
   mapToPixel,
   paddedBBox,
 } from './pngLayout'
@@ -114,5 +117,67 @@ describe('computeLegendGridLayout', () => {
     const layout = computeLegendGridLayout(3, 50)
     expect(layout.cols).toBe(1)
     expect(layout.rows).toBe(3)
+  })
+})
+
+// Regression coverage for the real bug: a "below" legend's first column
+// used to start at x=0, clipping the left half of every dot in it (e.g.
+// Cluster 1 and Cluster 5 when there were 4 columns).
+describe('legend positions never clip at the left edge (x < 0)', () => {
+  it('every "beside" legend dot has a non-negative bounding box x', () => {
+    for (const mapWidthCss of [300, 600, 1200]) {
+      for (const entryCount of [0, 1, 5, 12]) {
+        const positions = computeBesideLegendPositions(entryCount, mapWidthCss)
+        for (const position of positions) {
+          expect(legendDotBoundingBox(position).x).toBeGreaterThanOrEqual(0)
+        }
+      }
+    }
+  })
+
+  it('every "below" legend dot has a non-negative bounding box x, including column 0', () => {
+    for (const mapWidthCss of [300, 600, 900, 1200]) {
+      for (const entryCount of [0, 1, 5, 8, 12]) {
+        const { positions } = computeBelowLegendPositions(entryCount, mapWidthCss, 800)
+        for (const position of positions) {
+          expect(legendDotBoundingBox(position).x).toBeGreaterThanOrEqual(0)
+        }
+      }
+    }
+  })
+
+  it('specifically: two entries that wrap into the same column 0 (e.g. cluster 1 and a later cluster) both avoid clipping', () => {
+    const { positions, grid } = computeBelowLegendPositions(5, 1200, 800)
+    expect(grid.cols).toBeGreaterThan(1) // multiple columns, so column 0 recurs
+    const col0Entries = positions.filter((p) => p.index % grid.cols === 0)
+    expect(col0Entries.length).toBeGreaterThanOrEqual(2) // at least entry 0 and one wrapped entry
+    for (const position of col0Entries) {
+      expect(legendDotBoundingBox(position).x).toBeGreaterThanOrEqual(0)
+      // Column 0 starts at the fixed left margin, not x=0 — that's the fix.
+      expect(position.dotCenter.x).toBeGreaterThanOrEqual(position.dotRadius)
+    }
+  })
+})
+
+describe('computeBesideLegendPositions', () => {
+  it('places entries in one column to the right of the map, top to bottom', () => {
+    const positions = computeBesideLegendPositions(3, 1000)
+    expect(positions).toHaveLength(3)
+    expect(positions.every((p) => p.dotCenter.x === positions[0].dotCenter.x)).toBe(true)
+    expect(positions[1].dotCenter.y).toBeGreaterThan(positions[0].dotCenter.y)
+  })
+})
+
+describe('computeBelowLegendPositions', () => {
+  it('places entries in a grid below the map (topOffsetCss + padding)', () => {
+    const { positions } = computeBelowLegendPositions(2, 1200, 500)
+    expect(positions[0].dotCenter.y).toBeGreaterThan(500)
+  })
+
+  it('wraps into a second row once entries exceed the column count', () => {
+    const { positions, grid } = computeBelowLegendPositions(6, 700, 0) // 2 columns after the left margin
+    expect(grid.cols).toBe(2)
+    const rowsUsed = new Set(positions.map((p) => Math.floor(p.index / grid.cols)))
+    expect(rowsUsed.size).toBe(3)
   })
 })

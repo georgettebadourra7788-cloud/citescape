@@ -24,6 +24,7 @@ const SELECT_FIELDS = [
   'authorships',
   'primary_topic',
   'keywords',
+  'concepts',
   'referenced_works',
 ].join(',')
 
@@ -48,6 +49,13 @@ export interface OpenAlexKeyword {
   score: number
 }
 
+/** OpenAlex's legacy classification, superseded by topics/keywords — used only as a fallback below. */
+export interface OpenAlexConcept {
+  id: string
+  display_name: string
+  score: number
+}
+
 export interface OpenAlexWork {
   id: string
   doi: string | null
@@ -57,6 +65,7 @@ export interface OpenAlexWork {
   authorships: OpenAlexAuthorship[]
   primary_topic: OpenAlexTopic | null
   keywords: OpenAlexKeyword[]
+  concepts: OpenAlexConcept[]
   referenced_works: string[]
 }
 
@@ -90,6 +99,21 @@ export class OpenAlexError extends Error {
   }
 }
 
+/**
+ * The terms fed into cluster keyword ranking (see topKeywordsByDistinctiveness):
+ * OpenAlex's modern topics/keywords when the work has any, falling back to
+ * its legacy `concepts` only when both modern fields are empty — some
+ * older works were never backfilled with topics/keywords.
+ */
+function paperTerms(work: OpenAlexWork): string[] {
+  const modern = [
+    ...(work.primary_topic ? [work.primary_topic.display_name] : []),
+    ...(work.keywords ?? []).map((k) => k.display_name),
+  ]
+  if (modern.length > 0) return modern
+  return (work.concepts ?? []).map((c) => c.display_name)
+}
+
 export function workToPaper(work: OpenAlexWork): Paper {
   return {
     id: work.id,
@@ -101,7 +125,7 @@ export function workToPaper(work: OpenAlexWork): Paper {
       .map((a) => a.author?.display_name)
       .filter((name): name is string => Boolean(name)),
     topic: work.primary_topic?.display_name ?? null,
-    keywords: (work.keywords ?? []).map((k) => k.display_name),
+    keywords: paperTerms(work),
     referencedWorks: work.referenced_works ?? [],
   }
 }

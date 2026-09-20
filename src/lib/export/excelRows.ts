@@ -134,7 +134,14 @@ export function buildAboutRows(context: ExportContext): AboutRow[] {
   const notShown = coverage.totalPapers - coverage.shownPapers
   return [
     { Field: 'Query', Value: context.query },
-    { Field: 'Date fetched', Value: context.fetchedAt.toISOString() },
+    { Field: 'Data retrieved', Value: context.fetchedAt.toISOString() },
+    {
+      Field: 'Source',
+      Value:
+        context.dataSource === 'live'
+          ? 'live OpenAlex query'
+          : `local cache, originally retrieved on ${context.fetchedAt.toISOString().slice(0, 10)}`,
+    },
     { Field: 'Data source', Value: 'OpenAlex (https://openalex.org)' },
     { Field: 'Papers fetched', Value: String(context.papers.length) },
     { Field: 'Papers shown in coupling map', Value: String(coverage.shownPapers) },

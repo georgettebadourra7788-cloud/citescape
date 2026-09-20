@@ -95,6 +95,7 @@ const context: ExportContext = {
     layoutIterations: 300,
   },
   fetchedAt: new Date('2026-09-19T12:00:00Z'),
+  dataSource: 'live',
   figure: {
     networkLabel: 'Bibliographic coupling',
     minLinkStrength: 2,
@@ -203,6 +204,23 @@ describe('buildAboutRows', () => {
     expect(byField["Note: Papers sheet's Co-citation cluster column"]).toMatch(
       /only filled for papers/i,
     )
+  })
+
+  it('reports "Data retrieved" (date and time) and "Source: live OpenAlex query" for a fresh search', () => {
+    const rows = buildAboutRows(context)
+    const byField = Object.fromEntries(rows.map((r) => [r.Field, r.Value]))
+
+    expect(byField['Data retrieved']).toBe('2026-09-19T12:00:00.000Z')
+    expect(byField['Source']).toBe('live OpenAlex query')
+    expect(byField['Date fetched']).toBeUndefined() // renamed, not duplicated
+  })
+
+  it('reports "Source: local cache, originally retrieved on <date>" for a reopened saved project', () => {
+    const cachedContext: ExportContext = { ...context, dataSource: 'cache' }
+    const rows = buildAboutRows(cachedContext)
+    const byField = Object.fromEntries(rows.map((r) => [r.Field, r.Value]))
+
+    expect(byField['Source']).toBe('local cache, originally retrieved on 2026-09-19')
   })
 
   it('reports zero papers missing from the coupling map when every fetched paper is shown', () => {

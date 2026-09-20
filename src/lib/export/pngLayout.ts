@@ -2,6 +2,8 @@
 // (which needs a live Sigma instance + canvas and so can't run in tests)
 // so the actual cropping/placement decisions are unit testable.
 
+import type { Box } from './labelPlacement'
+
 export interface Bbox {
   x: [number, number]
   y: [number, number]
@@ -101,6 +103,9 @@ export function chooseLegendPlacement(aspect: number): LegendPlacement {
 export const LEGEND_COL_WIDTH_CSS = 300
 export const LEGEND_ROW_HEIGHT_CSS = 34
 export const LEGEND_TOP_PADDING_CSS = 20
+export const LEGEND_DOT_RADIUS_CSS = 6
+/** >= dot radius + comfortable padding, so a legend dot is never clipped at the canvas's left edge. */
+export const LEGEND_LEFT_MARGIN_CSS = 20
 
 export interface LegendGridLayout {
   cols: number
@@ -114,4 +119,59 @@ export function computeLegendGridLayout(entryCount: number, availableWidthCss: n
   const cols = Math.max(1, Math.floor(availableWidthCss / LEGEND_COL_WIDTH_CSS))
   const rows = Math.ceil(entryCount / cols)
   return { cols, rows, heightCss: LEGEND_TOP_PADDING_CSS + rows * LEGEND_ROW_HEIGHT_CSS }
+}
+
+export interface LegendEntryPosition {
+  index: number
+  dotCenter: { x: number; y: number }
+  dotRadius: number
+  textX: number
+  textY: number
+}
+
+function legendEntryPosition(index: number, x: number, y: number): LegendEntryPosition {
+  return { index, dotCenter: { x, y }, dotRadius: LEGEND_DOT_RADIUS_CSS, textX: x + 14, textY: y }
+}
+
+/** One legend column to the right of the map, top to bottom. */
+export function computeBesideLegendPositions(entryCount: number, mapWidthCss: number): LegendEntryPosition[] {
+  const x = mapWidthCss + LEGEND_LEFT_MARGIN_CSS
+  return Array.from({ length: entryCount }, (_, i) =>
+    legendEntryPosition(i, x, LEGEND_TOP_PADDING_CSS + i * LEGEND_ROW_HEIGHT_CSS),
+  )
+}
+
+/**
+ * A grid below the map, wrapped into as many columns as fit — each column
+ * starts `LEGEND_LEFT_MARGIN_CSS` in, so column 0's dots aren't clipped at
+ * the canvas's left edge (the bug this was built to fix: a column literally
+ * starting at x=0 clips the left half of every dot in it).
+ */
+export function computeBelowLegendPositions(
+  entryCount: number,
+  mapWidthCss: number,
+  topOffsetCss: number,
+): { positions: LegendEntryPosition[]; grid: LegendGridLayout } {
+  const grid = computeLegendGridLayout(entryCount, mapWidthCss - LEGEND_LEFT_MARGIN_CSS)
+  const cols = Math.max(grid.cols, 1)
+  const positions = Array.from({ length: entryCount }, (_, i) => {
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    return legendEntryPosition(
+      i,
+      LEGEND_LEFT_MARGIN_CSS + col * LEGEND_COL_WIDTH_CSS,
+      topOffsetCss + LEGEND_TOP_PADDING_CSS + row * LEGEND_ROW_HEIGHT_CSS,
+    )
+  })
+  return { positions, grid }
+}
+
+/** The dot's own bounding box, in the same units as `LegendEntryPosition` — used to check nothing clips. */
+export function legendDotBoundingBox(position: LegendEntryPosition): Box {
+  return {
+    x: position.dotCenter.x - position.dotRadius,
+    y: position.dotCenter.y - position.dotRadius,
+    width: position.dotRadius * 2,
+    height: position.dotRadius * 2,
+  }
 }

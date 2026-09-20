@@ -16,6 +16,8 @@ interface GraphExplorerProps {
   query: string
   papers: Paper[]
   fetchedAt: Date
+  /** 'live' for a fresh search, 'cache' for a reopened saved project — see ExportContext. */
+  dataSource: 'live' | 'cache'
   /** Restores the view a reopened saved project was left in; a fresh search omits this. */
   initialView?: { activeNetwork: NetworkKind; minLinkStrength: number }
 }
@@ -42,7 +44,14 @@ function maxEdgeWeight(network: NetworkResult): number {
   return network.edges.reduce((max, edge) => Math.max(max, edge.weight), 1)
 }
 
-export function GraphExplorer({ result, query, papers, fetchedAt, initialView }: GraphExplorerProps) {
+export function GraphExplorer({
+  result,
+  query,
+  papers,
+  fetchedAt,
+  dataSource,
+  initialView,
+}: GraphExplorerProps) {
   const [activeNetwork, setActiveNetwork] = useState<NetworkKind>(
     () => initialView?.activeNetwork ?? 'coupling',
   )
@@ -84,6 +93,7 @@ export function GraphExplorer({ result, query, papers, fetchedAt, initialView }:
       coCitation: result.coCitation,
       meta: result.meta,
       fetchedAt,
+      dataSource,
       figure: {
         networkLabel: NETWORK_LABELS[activeNetwork],
         minLinkStrength,
@@ -91,7 +101,7 @@ export function GraphExplorer({ result, query, papers, fetchedAt, initialView }:
         totalEdgeCount: network.edges.length,
       },
     }),
-    [query, papers, result, fetchedAt, activeNetwork, minLinkStrength, visibleEdgeCount, network],
+    [query, papers, result, fetchedAt, dataSource, activeNetwork, minLinkStrength, visibleEdgeCount, network],
   )
 
   return (

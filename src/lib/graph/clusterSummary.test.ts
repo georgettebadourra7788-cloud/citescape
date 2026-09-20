@@ -18,21 +18,13 @@ describe('median', () => {
 })
 
 describe('topKeywordsByDistinctiveness', () => {
-  // 6 papers total. 'coastal' is in all 6 (shared, non-distinctive:
+  // 10 papers total. 'coastal' is in all 10 (shared, non-distinctive:
   // clusterShare 1 / globalShare 1 = score 1). 'adaptation' is only in
-  // this cluster's 3 papers (clusterShare 1 / globalShare 0.5 = score 2)
-  // — more distinctive, so it should outrank the shared term.
-  const clusterLists = [
-    ['coastal', 'adaptation'],
-    ['coastal', 'adaptation'],
-    ['coastal', 'adaptation'],
-  ]
-  const allLists = [
-    ...clusterLists,
-    ['coastal', 'biodiversity'],
-    ['coastal', 'biodiversity'],
-    ['coastal', 'biodiversity'],
-  ]
+  // this cluster's 5 papers (clusterShare 1 / globalShare 0.5 = score 2)
+  // — more distinctive, so it should outrank the shared term. Both clear
+  // the default minimum count (5) and minimum share (5%).
+  const clusterLists = Array.from({ length: 5 }, () => ['coastal', 'adaptation'])
+  const allLists = [...clusterLists, ...Array.from({ length: 5 }, () => ['coastal', 'biodiversity'])]
 
   it('ranks a term exclusive to the cluster above one shared across the whole set', () => {
     const result = topKeywordsByDistinctiveness(clusterLists, allLists)
@@ -43,6 +35,33 @@ describe('topKeywordsByDistinctiveness', () => {
     const sparseCluster = [['rare-term'], ['other'], ['other']]
     const result = topKeywordsByDistinctiveness(sparseCluster, sparseCluster, { minCount: 3 })
     expect(result).toEqual([]) // 'rare-term' and 'other' both appear <3 times
+  })
+
+  it('rejects a noisy term seen in only 2 papers even though it would otherwise win on distinctiveness', () => {
+    // 'noise' is perfectly exclusive to this cluster (never appears
+    // elsewhere) but only in 2 of its 20 papers — below both the default
+    // minimum count (5) and minimum share (5% of 20 = 1, so 2 would
+    // actually clear *share*; the count floor of 5 is what excludes it).
+    // 'signal' appears in exactly 5 papers, clearing both floors.
+    const cluster = [
+      ['signal'], ['signal'], ['signal'], ['signal'], ['signal'],
+      ['noise'], ['noise'],
+      ...Array.from({ length: 13 }, () => ['filler']),
+    ]
+    const result = topKeywordsByDistinctiveness(cluster, cluster)
+    expect(result).not.toContain('noise')
+    expect(result).toContain('signal')
+  })
+
+  it('rejects a term below the minimum share even when the raw count clears the minimum count', () => {
+    // 'rare' appears in 5 papers (clears the count floor) out of 200
+    // (2.5% share, below the 5% floor) — must not win.
+    const cluster = [
+      ...Array.from({ length: 5 }, () => ['rare']),
+      ...Array.from({ length: 195 }, () => ['common']),
+    ]
+    const result = topKeywordsByDistinctiveness(cluster, cluster)
+    expect(result).not.toContain('rare')
   })
 
   it('truncates to the limit', () => {
@@ -99,23 +118,32 @@ describe('buildClusterSummaries', () => {
   })
 
   it('gives two clusters clearly different top keywords end to end', () => {
-    // Cluster 1: 3 papers about "adaptation"; Cluster 2: 3 papers about
+    // Cluster 1: 5 papers about "adaptation"; Cluster 2: 5 papers about
     // "biodiversity"; both clusters also mention the shared term "coastal".
+    // 5 papers each clears the default minimum count (5) and share (5%).
     const nodes: GraphNode[] = [
       node({ id: 'A1', cluster: 1 }),
       node({ id: 'A2', cluster: 1 }),
       node({ id: 'A3', cluster: 1 }),
+      node({ id: 'A4', cluster: 1 }),
+      node({ id: 'A5', cluster: 1 }),
       node({ id: 'B1', cluster: 2 }),
       node({ id: 'B2', cluster: 2 }),
       node({ id: 'B3', cluster: 2 }),
+      node({ id: 'B4', cluster: 2 }),
+      node({ id: 'B5', cluster: 2 }),
     ]
     const keywordsById = new Map<string, string[]>([
       ['A1', ['coastal', 'adaptation']],
       ['A2', ['coastal', 'adaptation']],
       ['A3', ['coastal', 'adaptation']],
+      ['A4', ['coastal', 'adaptation']],
+      ['A5', ['coastal', 'adaptation']],
       ['B1', ['coastal', 'biodiversity']],
       ['B2', ['coastal', 'biodiversity']],
       ['B3', ['coastal', 'biodiversity']],
+      ['B4', ['coastal', 'biodiversity']],
+      ['B5', ['coastal', 'biodiversity']],
     ])
 
     const summaries = buildClusterSummaries(nodes, keywordsById)

@@ -23,6 +23,7 @@ function makeWork(overrides: Partial<OpenAlexWork> = {}): OpenAlexWork {
     ],
     primary_topic: { id: 'https://openalex.org/T1', display_name: 'Computing' },
     keywords: [{ id: 'https://openalex.org/keywords/x', display_name: 'x', score: 0.9 }],
+    concepts: [],
     referenced_works: ['https://openalex.org/W2'],
     ...overrides,
   }
@@ -56,7 +57,10 @@ describe('workToPaper', () => {
       citedByCount: 5,
       authors: ['Ada Lovelace'],
       topic: 'Computing',
-      keywords: ['x'],
+      // The cluster-keyword term list combines the modern primary topic
+      // and keywords — see the dedicated describe block below for the
+      // legacy-concepts fallback.
+      keywords: ['Computing', 'x'],
       referencedWorks: ['https://openalex.org/W2'],
     })
   })
@@ -67,6 +71,7 @@ describe('workToPaper', () => {
         title: null,
         primary_topic: null,
         keywords: [],
+        concepts: [],
         referenced_works: [],
       }),
     )
@@ -75,6 +80,57 @@ describe('workToPaper', () => {
     expect(paper.topic).toBeNull()
     expect(paper.keywords).toEqual([])
     expect(paper.referencedWorks).toEqual([])
+  })
+})
+
+describe('workToPaper — term source preference', () => {
+  it('prefers modern topic + keywords over legacy concepts when both exist', () => {
+    const paper = workToPaper(
+      makeWork({
+        primary_topic: { id: 'T1', display_name: 'Coastal engineering' },
+        keywords: [{ id: 'k1', display_name: 'sea level rise', score: 0.9 }],
+        concepts: [{ id: 'c1', display_name: 'Legacy concept', score: 0.8 }],
+      }),
+    )
+
+    expect(paper.keywords).toEqual(['Coastal engineering', 'sea level rise'])
+    expect(paper.keywords).not.toContain('Legacy concept')
+  })
+
+  it('falls back to legacy concepts only when topic and keywords are both empty', () => {
+    const paper = workToPaper(
+      makeWork({
+        primary_topic: null,
+        keywords: [],
+        concepts: [{ id: 'c1', display_name: 'Legacy concept', score: 0.8 }],
+      }),
+    )
+
+    expect(paper.keywords).toEqual(['Legacy concept'])
+  })
+
+  it('uses keywords alone when there is no primary topic', () => {
+    const paper = workToPaper(
+      makeWork({
+        primary_topic: null,
+        keywords: [{ id: 'k1', display_name: 'sea level rise', score: 0.9 }],
+        concepts: [{ id: 'c1', display_name: 'Legacy concept', score: 0.8 }],
+      }),
+    )
+
+    expect(paper.keywords).toEqual(['sea level rise'])
+  })
+
+  it('uses the topic alone when there are no keywords', () => {
+    const paper = workToPaper(
+      makeWork({
+        primary_topic: { id: 'T1', display_name: 'Coastal engineering' },
+        keywords: [],
+        concepts: [{ id: 'c1', display_name: 'Legacy concept', score: 0.8 }],
+      }),
+    )
+
+    expect(paper.keywords).toEqual(['Coastal engineering'])
   })
 })
 

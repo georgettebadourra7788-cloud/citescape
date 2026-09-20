@@ -23,21 +23,31 @@ function countTermDocFrequency(keywordLists: string[][]): Map<string, number> {
 export interface DistinctivenessOptions {
   /** A term must appear in at least this many of the cluster's papers to be considered. */
   minCount?: number
+  /** ...and in at least this share of the cluster's papers — scales the floor up for big clusters. */
+  minShare?: number
   limit?: number
 }
+
+const DEFAULT_MIN_COUNT = 5
+const DEFAULT_MIN_SHARE = 0.05
 
 /**
  * Ranks terms by distinctiveness — the share of the cluster's papers that
  * have the term, divided by the share of *all* papers that have it —
  * rather than raw frequency, so a term common across the whole set (e.g.
  * the query topic itself) doesn't dominate every cluster's keyword list.
+ * A term must also clear both a minimum raw count and a minimum share of
+ * the cluster, so a rare, noisy term (only ever seen in a couple of
+ * papers, but happening to be perfectly "exclusive" to this cluster)
+ * can't win purely on distinctiveness.
  */
 export function topKeywordsByDistinctiveness(
   clusterKeywordLists: string[][],
   allKeywordLists: string[][],
   options: DistinctivenessOptions = {},
 ): string[] {
-  const minCount = options.minCount ?? 3
+  const minCount = options.minCount ?? DEFAULT_MIN_COUNT
+  const minShare = options.minShare ?? DEFAULT_MIN_SHARE
   const limit = options.limit ?? 5
 
   const clusterCounts = countTermDocFrequency(clusterKeywordLists)
@@ -49,6 +59,7 @@ export function topKeywordsByDistinctiveness(
   for (const [term, count] of clusterCounts) {
     if (count < minCount) continue
     const clusterShare = count / clusterSize
+    if (clusterShare < minShare) continue
     // globalCounts always has an entry >= count for this term, since the
     // cluster's papers are themselves part of `allKeywordLists` — the
     // fallback just guards against a caller passing mismatched lists.

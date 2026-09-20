@@ -114,6 +114,7 @@ function App() {
                     query={query}
                     papers={papers}
                     fetchedAt={fetchedAt}
+                    dataSource={source.type === 'project' ? 'cache' : 'live'}
                     initialView={activeProject.initialView ?? undefined}
                   />
                 </>

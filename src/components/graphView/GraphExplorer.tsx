@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { ExportContext } from '../../lib/export/exportContext'
 import type { ExportNetworkKind } from '../../lib/export/filename'
 import type { GraphBuildResult, GraphNode, NetworkKind, NetworkResult } from '../../lib/graph/types'
+import { computeWeightedDegree } from '../../lib/graph/weightedDegree'
 import type { Paper } from '../../lib/openalex'
 import { computeAutoMinLinkStrength } from './autoMinLinkStrength'
 import { ClusterLegend } from './ClusterLegend'
@@ -78,6 +79,14 @@ export function GraphExplorer({
     () => network.nodes.find((node) => node.id === selectedNodeId) ?? null,
     [network, selectedNodeId],
   )
+
+  // "Times co-cited" only means something on the co-citation network —
+  // coupling edges weight shared references between papers, a different
+  // metric (see the Excel Co-citation nodes sheet, which shows the same).
+  const coCitedWeight = useMemo(() => {
+    if (activeNetwork !== 'coCitation' || !selectedNode) return undefined
+    return computeWeightedDegree(network.edges).get(selectedNode.id) ?? 0
+  }, [activeNetwork, network, selectedNode])
 
   const maxWeight = useMemo(() => maxEdgeWeight(network), [network])
   const visibleEdgeCount = useMemo(
@@ -176,7 +185,11 @@ export function GraphExplorer({
             />
           </div>
           {selectedNode && (
-            <NodeDetailsPanel node={selectedNode} onClose={() => setSelectedNodeId(null)} />
+            <NodeDetailsPanel
+              node={selectedNode}
+              coCitedWeight={coCitedWeight}
+              onClose={() => setSelectedNodeId(null)}
+            />
           )}
         </div>
       )}

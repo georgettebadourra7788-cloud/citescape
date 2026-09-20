@@ -1,18 +1,22 @@
 import { clusterColor } from '../../lib/graph/clusterColors'
 import { clusterDisplayLabel } from '../../lib/graph/clusterDisplay'
+import { resolveNodeLink } from '../../lib/graph/nodeLink'
 import type { GraphNode } from '../../lib/graph/types'
 
 interface NodeDetailsPanelProps {
   node: GraphNode
+  /**
+   * Co-citation only: how many times this node is co-cited (the sum of its
+   * incident co-citation edge weights — see computeWeightedDegree).
+   * Undefined on the coupling network, where this metric doesn't apply.
+   */
+  coCitedWeight?: number
   onClose: () => void
 }
 
-export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
+export function NodeDetailsPanel({ node, coCitedWeight, onClose }: NodeDetailsPanelProps) {
   const isUnresolved = node.resolved === false
-  // Every node gets a link: its DOI when it has one, otherwise its
-  // OpenAlex page (node.id is always a full https://openalex.org/... url).
-  const link = node.doi ?? node.id
-  const linkLabel = node.doi ? node.doi : 'View on OpenAlex'
+  const link = resolveNodeLink(node)
 
   return (
     <div className="w-full shrink-0 rounded-lg border border-slate-200 p-4 sm:w-72">
@@ -47,6 +51,12 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
             {node.inSetCitations} {node.inSetCitations === 1 ? 'paper' : 'papers'}
           </dd>
         </div>
+        {coCitedWeight !== undefined && (
+          <div>
+            <dt className="text-slate-500">Co-cited (weighted)</dt>
+            <dd className="text-slate-900">{coCitedWeight}</dd>
+          </div>
+        )}
         {node.globalCitations !== null && (
           <div>
             <dt className="text-slate-500">Global citations</dt>
@@ -68,12 +78,12 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
           <dt className="text-slate-500">Link</dt>
           <dd>
             <a
-              href={link}
+              href={link.href}
               target="_blank"
               rel="noreferrer"
               className="break-all text-purple-700 hover:underline"
             >
-              {linkLabel}
+              {link.label}
             </a>
           </dd>
         </div>

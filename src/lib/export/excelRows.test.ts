@@ -257,13 +257,28 @@ describe('buildAboutRows', () => {
 
 describe('buildCoCitationNodesRows', () => {
   // R1 is co-cited with both P1 (also one of our fetched papers) and R3
-  // (an external reference only). Hand-verifiable weighted degrees:
-  //   R1: 3 + 2 = 5      P1: 3      R3: 2
+  // (an external reference only, never one of our own papers). Hand-verifiable
+  // weighted degrees: R1: 3 + 2 = 5      P1: 3      R3: 2
   const coCitationWithEdges: NetworkResult = {
     nodes: [
-      node({ id: 'R1', label: 'Reference One', cluster: 1, inSetCitations: 2 }),
-      node({ id: 'P1', label: 'Paper One', cluster: 1, inSetCitations: 1 }),
-      node({ id: 'R3', label: 'Reference Three', cluster: 2, inSetCitations: 1, resolved: true }),
+      node({
+        id: 'R1',
+        label: 'Reference One',
+        cluster: 1,
+        inSetCitations: 2,
+        globalCitations: 99,
+        doi: 'https://doi.org/10.1/r1',
+      }),
+      node({ id: 'P1', label: 'Paper One', cluster: 1, inSetCitations: 1, globalCitations: 42 }),
+      node({
+        id: 'R3',
+        label: 'Reference Three',
+        cluster: 2,
+        inSetCitations: 1,
+        resolved: true,
+        globalCitations: null,
+        doi: null,
+      }),
     ],
     edges: [
       { source: 'R1', target: 'P1', weight: 3 },
@@ -287,15 +302,29 @@ describe('buildCoCitationNodesRows', () => {
     expect(byId['R3']['Times co-cited (weighted degree)']).toBe(2)
   })
 
-  it('flags "In fetched set?" and fills global citations only for nodes that are also our papers', () => {
+  it('fills Global citations and DOI from the node\'s own batched lookup, not just papers we fetched', () => {
+    const rows = buildCoCitationNodesRows(contextWithEdges)
+    const byId = Object.fromEntries(rows.map((r) => [r['OpenAlex ID'], r]))
+
+    // R1 is a reference-only node (never one of our fetched papers), but
+    // the batched lookup now fetches cited_by_count/doi for every
+    // resolved reference — see fetchWorksByIds.
+    expect(byId['R1']['Global citations']).toBe(99)
+    expect(byId['R1'].DOI).toBe('https://doi.org/10.1/r1')
+
+    expect(byId['P1']['Global citations']).toBe(42)
+
+    // A resolved node OpenAlex simply has no DOI/citation count for.
+    expect(byId['R3']['Global citations']).toBe('')
+    expect(byId['R3'].DOI).toBe('')
+  })
+
+  it('flags "In fetched set?" against our own papers, independent of Global citations', () => {
     const rows = buildCoCitationNodesRows(contextWithEdges)
     const byId = Object.fromEntries(rows.map((r) => [r['OpenAlex ID'], r]))
 
     expect(byId['P1']['In fetched set?']).toBe('Yes')
-    expect(byId['P1']['Global citations']).toBe(42) // from papers, not the co-citation node itself
-
     expect(byId['R1']['In fetched set?']).toBe('No')
-    expect(byId['R1']['Global citations']).toBe('')
   })
 
   it('labels clusters the same way the legend does', () => {

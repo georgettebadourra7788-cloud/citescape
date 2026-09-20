@@ -64,6 +64,29 @@ function drawNodeLabelWithHalo(
   context.fillText(data.label, x, y)
 }
 
+const FOCUS_RING_COLOR = '#9333ea' // purple-600, the app's accent
+const FOCUS_RING_WIDTH = 2
+const FOCUS_RING_PADDING = 3
+
+/**
+ * The persistent "ring" around the hovered or selected node — drawn via
+ * Sigma's built-in highlighted-node render pass, which fires for any node
+ * the nodeReducer marks `highlighted: true` (see below), independent of
+ * whether the mouse is still over it — so a selected node stays visibly
+ * marked until deselected, not just while hovered. Sigma's *default* for
+ * this pass (defaultDrawNodeHover) also redraws the node's label a second
+ * time, unflipped, on top of everything; since we already draw every
+ * label ourselves via forceLabel (see drawNodeLabelWithHalo), this
+ * override replaces that default entirely and draws only the ring.
+ */
+function drawFocusRing(context: CanvasRenderingContext2D, data: { x: number; y: number; size: number }): void {
+  context.beginPath()
+  context.arc(data.x, data.y, data.size + FOCUS_RING_PADDING, 0, Math.PI * 2)
+  context.lineWidth = FOCUS_RING_WIDTH
+  context.strokeStyle = FOCUS_RING_COLOR
+  context.stroke()
+}
+
 let measureCanvasContext: CanvasRenderingContext2D | null | undefined
 /** Real text metrics via an offscreen canvas — matches the font `drawNodeLabelWithHalo` draws with. */
 function measureTextWidth(text: string, fontSize: number): number {
@@ -236,15 +259,9 @@ export function NetworkGraph({
       labelGridCellSize: 250,
       labelRenderedSizeThreshold: 4,
       defaultDrawNodeLabel: drawNodeLabelWithHalo,
-      // Sigma has its own built-in "hovered node" rendering, entirely
-      // independent of our nodeReducer/defaultDrawNodeLabel above — it
-      // tracks hover internally and, by default, draws that node's label
-      // a SECOND time (always to the right, ignoring any flip) on a
-      // separate layer on top of everything. Since we already render the
-      // hovered node's label ourselves — correctly placed, exactly once,
-      // via forceLabel — silence this second pass entirely, or every
-      // hover shows two overlapping copies of the same label.
-      defaultDrawNodeHover: () => {},
+      // See drawFocusRing — replaces Sigma's default (which redraws the
+      // node's label a second time, unflipped) with just a focus ring.
+      defaultDrawNodeHover: drawFocusRing,
       defaultEdgeColor: 'rgba(100, 116, 139, 0.25)',
     })
     sigmaRef.current = sigma
@@ -333,33 +350,40 @@ export function NetworkGraph({
     const sigma = sigmaRef.current
     if (!sigma) return
 
-    const neighbors = hoveredNodeId ? new Set(graph.neighbors(hoveredNodeId)) : null
+    // The hovered node takes precedence; if nothing's hovered, the
+    // selected node is the focus instead — and, unlike hover, it's not
+    // tied to the mouse, so this same dimming/highlighting/ring treatment
+    // persists after the mouse leaves, until the node is deselected.
+    const focusNodeId = hoveredNodeId ?? selectedNodeId
+    const neighbors = focusNodeId ? new Set(graph.neighbors(focusNodeId)) : null
 
     // Sigma's own NodeDisplayData type doesn't know about labelSide/labelDy
     // (our custom attributes, read by drawNodeLabelWithHalo above) — widen
     // the return type so returning them isn't a TS excess-property error.
     type ReducedNodeData = Partial<NodeDisplayData> & Pick<DisplayNodeAttributes, 'labelSide' | 'labelDy'>
     sigma.setSetting('nodeReducer', (node, data): ReducedNodeData => {
-      if (hoveredNodeId) {
-        const isFocused = node === hoveredNodeId || (neighbors?.has(node) ?? false)
+      if (focusNodeId) {
+        const isFocused = node === focusNodeId || (neighbors?.has(node) ?? false)
         if (!isFocused) return { ...data, color: DIMMED_COLOR, label: null, zIndex: 0 }
       } else if (selectedClusterId !== null && data.cluster !== selectedClusterId) {
         return { ...data, color: DIMMED_COLOR, label: null }
       }
 
-      // The focused node (hovered, or else selected) always shows its
-      // label, on top of everything else, exactly once — see
-      // computeLabelPlacements/selectLabelsWithFocus. Everything else
-      // (neighbors while hovering, or any other visible node otherwise)
-      // is labeled only if that same pass picked it, so nothing overlaps
+      // The focus node always shows its label, on top of everything else,
+      // exactly once — see computeLabelPlacements/selectLabelsWithFocus.
+      // `highlighted: true` is what draws its ring (drawFocusRing above),
+      // via Sigma's own highlighted-node render pass, regardless of
+      // whether the mouse is still over it. Everything else (neighbors
+      // while focused, or any other visible node otherwise) is labeled
+      // only if that same placement pass picked it, so nothing overlaps
       // the focused label or each other.
       const placement = labelPlacementsRef.current.get(node)
-      const isFocusNode = node === (hoveredNodeId ?? selectedNodeId)
-      if (isFocusNode) {
-        if (!placement) return { ...data, zIndex: 2 }
-        return { ...data, zIndex: 2, forceLabel: true, labelSide: placement.side, labelDy: placement.dy }
+      if (node === focusNodeId) {
+        const base = { ...data, zIndex: 2, highlighted: true }
+        if (!placement) return base
+        return { ...base, forceLabel: true, labelSide: placement.side, labelDy: placement.dy }
       }
-      if (hoveredNodeId) {
+      if (focusNodeId) {
         if (!placement) return { ...data, zIndex: 1, label: null }
         return { ...data, zIndex: 1, forceLabel: true, labelSide: placement.side, labelDy: placement.dy }
       }
@@ -372,9 +396,9 @@ export function NetworkGraph({
 
       const [source, target] = graph.extremities(edge)
 
-      if (hoveredNodeId) {
-        const touchesHovered = source === hoveredNodeId || target === hoveredNodeId
-        if (!touchesHovered) return { ...data, hidden: true }
+      if (focusNodeId) {
+        const touchesFocus = source === focusNodeId || target === focusNodeId
+        if (!touchesFocus) return { ...data, hidden: true }
         return { ...data, color: HIGHLIGHTED_EDGE_COLOR, size: 2 }
       }
 

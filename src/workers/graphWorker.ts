@@ -106,8 +106,9 @@ self.onmessage = async (event: MessageEvent<BuildGraphsRequest>) => {
         label: work?.title ?? 'Unknown work (no OpenAlex record)',
         year: work?.year ?? null,
         inSetCitations: citers.size,
-        globalCitations: null,
+        globalCitations: work?.citedByCount ?? null,
         authors: work?.authors,
+        doi: work?.doi,
         resolved,
       })
 

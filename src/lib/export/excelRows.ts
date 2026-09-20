@@ -1,6 +1,7 @@
 import { APP_VERSION } from '../appInfo'
 import { clusterDisplayLabel } from '../graph/clusterDisplay'
 import { computeCouplingCoverage } from '../graph/couplingCoverage'
+import { computeWeightedDegree } from '../graph/weightedDegree'
 import type { ExportContext } from './exportContext'
 import type { NetworkResult } from '../graph/types'
 
@@ -97,6 +98,7 @@ export interface CoCitationNodeRow {
   Title: string
   Authors: string
   Year: number | ''
+  DOI: string
   'Global citations': number | ''
   'Times co-cited (weighted degree)': number
   Cluster: string
@@ -105,32 +107,27 @@ export interface CoCitationNodeRow {
 
 /**
  * One row per co-citation node (a referenced work, not necessarily one of
- * our fetched papers). "Global citations" and "In fetched set?" are only
- * knowable for the subset that also happen to be papers we fetched — we
- * never fetch cited_by_count for reference-only nodes (see step 5).
+ * our fetched papers) — "Global citations" and "DOI" come from the node's
+ * own batched lookup (see fetchWorksByIds), which now fetches both for
+ * every resolved reference, not just the ones that also happen to be
+ * papers we fetched. "In fetched set?" is still only knowable against our
+ * own fetched papers.
  */
 export function buildCoCitationNodesRows(context: ExportContext): CoCitationNodeRow[] {
   const paperById = new Map(context.papers.map((p) => [p.id, p]))
+  const weightedDegreeById = computeWeightedDegree(context.coCitation.edges)
 
-  const weightedDegreeById = new Map<string, number>()
-  for (const edge of context.coCitation.edges) {
-    weightedDegreeById.set(edge.source, (weightedDegreeById.get(edge.source) ?? 0) + edge.weight)
-    weightedDegreeById.set(edge.target, (weightedDegreeById.get(edge.target) ?? 0) + edge.weight)
-  }
-
-  return context.coCitation.nodes.map((node) => {
-    const paper = paperById.get(node.id)
-    return {
-      'OpenAlex ID': node.id,
-      Title: node.label,
-      Authors: (node.authors ?? []).join(', '),
-      Year: node.year ?? '',
-      'Global citations': paper ? paper.citedByCount : '',
-      'Times co-cited (weighted degree)': weightedDegreeById.get(node.id) ?? 0,
-      Cluster: clusterDisplayLabel(node.cluster),
-      'In fetched set?': paper ? 'Yes' : 'No',
-    }
-  })
+  return context.coCitation.nodes.map((node) => ({
+    'OpenAlex ID': node.id,
+    Title: node.label,
+    Authors: (node.authors ?? []).join(', '),
+    Year: node.year ?? '',
+    DOI: node.doi ?? '',
+    'Global citations': node.globalCitations ?? '',
+    'Times co-cited (weighted degree)': weightedDegreeById.get(node.id) ?? 0,
+    Cluster: clusterDisplayLabel(node.cluster),
+    'In fetched set?': paperById.has(node.id) ? 'Yes' : 'No',
+  }))
 }
 
 export interface AboutRow {

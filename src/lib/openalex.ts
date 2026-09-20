@@ -228,8 +228,10 @@ const ID_FILTER_BATCH_SIZE = 100
 
 const MINIMAL_SELECT_FIELDS = [
   'id',
+  'doi',
   'title',
   'publication_year',
+  'cited_by_count',
   'authorships',
   'primary_topic',
   'keywords',
@@ -238,8 +240,10 @@ const MINIMAL_SELECT_FIELDS = [
 
 export interface MinimalWork {
   id: string
+  doi: string | null
   title: string
   year: number | null
+  citedByCount: number
   authors: string[]
   /** The reference's own terms for co-citation cluster keyword ranking — see paperTerms. */
   keywords: string[]
@@ -285,8 +289,10 @@ export async function fetchWorksByIds(
     for (const work of page.results) {
       result.set(work.id, {
         id: work.id,
+        doi: work.doi,
         title: work.title ?? '(untitled)',
         year: work.publication_year,
+        citedByCount: work.cited_by_count ?? 0,
         authors: (work.authorships ?? [])
           .map((a) => a.author?.display_name)
           .filter((name): name is string => Boolean(name)),

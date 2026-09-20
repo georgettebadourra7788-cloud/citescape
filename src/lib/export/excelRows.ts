@@ -5,6 +5,8 @@ import type { ExportContext } from './exportContext'
 import type { NetworkResult } from '../graph/types'
 
 export interface PapersRow {
+  'OpenAlex ID': string
+  'Fetch rank': number
   Title: string
   Authors: string
   Year: number | ''
@@ -14,11 +16,19 @@ export interface PapersRow {
   'Co-citation cluster': string
 }
 
+/**
+ * `Fetch rank` is each paper's 1-indexed position in `context.papers` —
+ * the order OpenAlex returned them in (relevance-sorted) — so together
+ * with `OpenAlex ID` the exact fetched set can be rebuilt in the same
+ * order without re-running the search.
+ */
 export function buildPapersRows(context: ExportContext): PapersRow[] {
   const couplingByPaper = new Map(context.coupling.nodes.map((n) => [n.id, n]))
   const coCitationByPaper = new Map(context.coCitation.nodes.map((n) => [n.id, n]))
 
-  return context.papers.map((paper) => ({
+  return context.papers.map((paper, index) => ({
+    'OpenAlex ID': paper.id,
+    'Fetch rank': index + 1,
     Title: paper.title,
     Authors: paper.authors.join(', '),
     Year: paper.year ?? '',

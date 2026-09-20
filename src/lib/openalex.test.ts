@@ -345,6 +345,63 @@ describe('fetchWorksByIds', () => {
     expect(onProgress).toHaveBeenNthCalledWith(1, 100, 150)
     expect(onProgress).toHaveBeenNthCalledWith(2, 150, 150)
   })
+
+  it('requests topics, keywords, and concepts so co-citation clusters can use the reference\'s own terms', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ meta: { count: 0, next_cursor: null }, results: [] }),
+    )
+
+    await fetchWorksByIds(['https://openalex.org/W2'])
+
+    const requestedUrl = new URL(vi.mocked(fetch).mock.calls[0][0] as string)
+    const select = requestedUrl.searchParams.get('select')
+    expect(select).toContain('primary_topic')
+    expect(select).toContain('keywords')
+    expect(select).toContain('concepts')
+  })
+
+  it("prefers a reference's modern topic + keywords over its legacy concepts", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        meta: { count: 1, next_cursor: null },
+        results: [
+          makeWork({
+            id: 'https://openalex.org/W2',
+            primary_topic: { id: 'T1', display_name: 'Coastal engineering' },
+            keywords: [{ id: 'k1', display_name: 'sea level rise', score: 0.9 }],
+            concepts: [{ id: 'c1', display_name: 'Legacy concept', score: 0.8 }],
+          }),
+        ],
+      }),
+    )
+
+    const result = await fetchWorksByIds(['https://openalex.org/W2'])
+
+    expect(result.get('https://openalex.org/W2')?.keywords).toEqual([
+      'Coastal engineering',
+      'sea level rise',
+    ])
+  })
+
+  it('falls back to legacy concepts for a reference with no modern topic or keywords', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        meta: { count: 1, next_cursor: null },
+        results: [
+          makeWork({
+            id: 'https://openalex.org/W2',
+            primary_topic: null,
+            keywords: [],
+            concepts: [{ id: 'c1', display_name: 'Legacy concept', score: 0.8 }],
+          }),
+        ],
+      }),
+    )
+
+    const result = await fetchWorksByIds(['https://openalex.org/W2'])
+
+    expect(result.get('https://openalex.org/W2')?.keywords).toEqual(['Legacy concept'])
+  })
 })
 
 describe('fetchPapersByIds', () => {

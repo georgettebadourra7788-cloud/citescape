@@ -105,10 +105,12 @@ const context: ExportContext = {
 }
 
 describe('buildPapersRows', () => {
-  it('builds one row per paper with both networks\' cluster labels', () => {
+  it("builds one row per paper, in fetch order, with an OpenAlex ID, fetch rank, and both networks' cluster labels", () => {
     const rows = buildPapersRows(context)
     expect(rows).toEqual([
       {
+        'OpenAlex ID': 'P1',
+        'Fetch rank': 1,
         Title: 'Paper One',
         Authors: 'Ada Lovelace',
         Year: 2019,
@@ -118,6 +120,8 @@ describe('buildPapersRows', () => {
         'Co-citation cluster': '', // P1 isn't itself a co-citation node
       },
       {
+        'OpenAlex ID': 'P2',
+        'Fetch rank': 2,
         Title: 'Paper Two',
         Authors: 'Alan Turing, Grace Hopper',
         Year: 2021,

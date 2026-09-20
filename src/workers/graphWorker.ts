@@ -82,7 +82,6 @@ self.onmessage = async (event: MessageEvent<BuildGraphsRequest>) => {
       total: refIds.length,
     })
 
-    const paperKeywordsById = new Map(papers.map((p) => [p.id, p.keywords]))
     const refWorks = await fetchWorksByIds(refIds, {
       mailto: options.mailto,
       onProgress: (fetched, total) =>
@@ -112,12 +111,10 @@ self.onmessage = async (event: MessageEvent<BuildGraphsRequest>) => {
         resolved,
       })
 
-      const keywords: string[] = []
-      for (const citerId of citers) {
-        const citerKeywords = paperKeywordsById.get(citerId)
-        if (citerKeywords) keywords.push(...citerKeywords)
-      }
-      coCitationKeywords.set(refId, keywords)
+      // The reference's own topic/keywords (concepts as a fallback — see
+      // paperTerms in openalex.ts), not an aggregate of the citing papers'
+      // keywords — we now have real data for the reference itself.
+      coCitationKeywords.set(refId, work?.keywords ?? [])
     }
 
     post({ type: 'progress', stage: 'clustering', message: 'Running clustering and layout…' })

@@ -226,13 +226,23 @@ export async function fetchWorksForTopic(
 
 const ID_FILTER_BATCH_SIZE = 100
 
-const MINIMAL_SELECT_FIELDS = ['id', 'title', 'publication_year', 'authorships'].join(',')
+const MINIMAL_SELECT_FIELDS = [
+  'id',
+  'title',
+  'publication_year',
+  'authorships',
+  'primary_topic',
+  'keywords',
+  'concepts',
+].join(',')
 
 export interface MinimalWork {
   id: string
   title: string
   year: number | null
   authors: string[]
+  /** The reference's own terms for co-citation cluster keyword ranking — see paperTerms. */
+  keywords: string[]
 }
 
 export function shortOpenAlexId(id: string): string {
@@ -256,7 +266,7 @@ export interface FetchWorksByIdsOptions {
 }
 
 /**
- * Look up minimal metadata (title, year, authors) for a list of OpenAlex
+ * Look up minimal metadata (title, year, authors, keywords) for a list of OpenAlex
  * work IDs, batching requests at the API's 100-values-per-filter limit.
  */
 export async function fetchWorksByIds(
@@ -280,6 +290,7 @@ export async function fetchWorksByIds(
         authors: (work.authorships ?? [])
           .map((a) => a.author?.display_name)
           .filter((name): name is string => Boolean(name)),
+        keywords: paperTerms(work),
       })
     }
     options.onProgress?.(Math.min(i + batch.length, ids.length), ids.length)

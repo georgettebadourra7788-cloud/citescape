@@ -11,7 +11,8 @@ import {
 } from './buildDisplayGraph'
 import {
   labelCapForZoom,
-  placeLabel,
+  labelPriority,
+  selectLabelsWithFocus,
   selectNonOverlappingLabels,
   type LabelCandidate,
   type LabelPlacement,
@@ -30,8 +31,8 @@ const VIEW_PADDING_RATIO = 0.08
 const MIN_CAMERA_RATIO = 0.05
 const MAX_CAMERA_RATIO = 10
 
-/** Cluster-top labels always outrank every non-cluster-top label — see computeVisibleLabels. */
-const CLUSTER_TOP_PRIORITY_BONUS = 1e9
+/** Fixed regardless of zoom — hover is a focused view of one node, not the whole map. */
+const HOVER_LABEL_CAP = 10
 
 /**
  * Small white halo behind label text so it stays readable over nodes/edges.
@@ -79,55 +80,80 @@ function measureTextWidth(text: string, fontSize: number): number {
 
 export type NetworkSigma = Sigma<DisplayNodeAttributes, DisplayEdgeAttributes>
 
-/**
- * Which nodes get a label right now, in screen space, so none overlap.
- * Re-run on every camera change (see the 'updated' listener below) —
- * zooming in spreads nodes apart on screen, which is exactly what lets
- * more labels through without any change to the selection logic itself.
- */
-function computeVisibleLabels(sigma: NetworkSigma, graph: DisplayGraph): Map<string, LabelPlacement> {
+/** Builds LabelCandidate entries for a set of nodes, skipping unlabeled (unresolved) ones. */
+function buildLabelCandidates(
+  sigma: NetworkSigma,
+  graph: DisplayGraph,
+  nodeIds: Iterable<string>,
+  priorityFor: (attrs: DisplayNodeAttributes) => number,
+): LabelCandidate[] {
   const candidates: LabelCandidate[] = []
-  graph.forEachNode((node, attrs) => {
-    if (!attrs.label) return
+  for (const id of nodeIds) {
+    const attrs = graph.getNodeAttributes(id)
+    if (!attrs.label) continue
     const viewport = sigma.graphToViewport({ x: attrs.x, y: attrs.y })
     candidates.push({
-      id: node,
+      id,
       x: viewport.x,
       y: viewport.y,
       radius: sigma.scaleSize(attrs.size),
       text: attrs.label,
-      // Each cluster's top paper always outranks every other label, so the
-      // default (uncrowded) view fills its ~10-label budget with one label
-      // per cluster before any second label from the same cluster appears.
-      priority: (attrs.isClusterTop ? CLUSTER_TOP_PRIORITY_BONUS : 0) + attrs.citations,
+      priority: priorityFor(attrs),
     })
-  })
-
-  return selectNonOverlappingLabels(candidates, measureTextWidth, LABEL_SIZE, {
-    maxLabels: labelCapForZoom(sigma.getCamera().ratio, MIN_CAMERA_RATIO),
-    viewport: sigma.getDimensions(),
-  })
+  }
+  return candidates
 }
 
 /**
- * Where to draw a single node's label — used for the hovered/selected node,
- * which must always show its label even if the last collision pass didn't
- * pick it (dropped for the cap, an overlap, or not yet recomputed).
+ * The single label-placement routine, covering every state the live map can
+ * be in — resting, hovering, or a node selected — so there's exactly one
+ * place that decides which labels show and where, never several competing
+ * ones that can disagree or go stale:
+ *
+ * - Hovering: candidates are the hovered node + its neighbors only, ranked
+ *   by node size, capped at HOVER_LABEL_CAP — the hovered node's label is
+ *   always kept (selectLabelsWithFocus's never-drop guarantee).
+ * - A node selected (nothing hovered): candidates are every labeled node
+ *   (same set and cluster-tiered priority as resting state), still capped
+ *   at the zoom-derived cap, but the selected node is always kept too.
+ * - Resting: every labeled node competes solely on priority/collision,
+ *   nothing guaranteed a slot.
+ *
+ * Callers must re-run this — see recomputeLabels in the effect below —
+ * whenever the hovered node, the selected node, the zoom, or the canvas
+ * size changes; those are the only inputs that can change what it returns.
  */
-function computeSingleLabelPlacement(
+function computeLabelPlacements(
   sigma: NetworkSigma,
-  data: { x: number; y: number; size: number; label: string | null },
-): LabelPlacement {
-  const viewport = sigma.graphToViewport({ x: data.x, y: data.y })
-  const candidate: LabelCandidate = {
-    id: '',
-    x: viewport.x,
-    y: viewport.y,
-    radius: sigma.scaleSize(data.size),
-    text: data.label ?? '',
-    priority: 0,
+  graph: DisplayGraph,
+  focus: { hoveredId: string | null; selectedId: string | null },
+): Map<string, LabelPlacement> {
+  const viewport = sigma.getDimensions()
+
+  if (focus.hoveredId && graph.hasNode(focus.hoveredId)) {
+    const ids = [focus.hoveredId, ...graph.neighbors(focus.hoveredId)]
+    // Node size only during hover — no cluster-top tiering, unlike the
+    // resting/selected candidates below.
+    const candidates = buildLabelCandidates(sigma, graph, ids, (attrs) => attrs.citations)
+    return selectLabelsWithFocus(focus.hoveredId, candidates, measureTextWidth, LABEL_SIZE, {
+      maxLabels: HOVER_LABEL_CAP,
+      viewport,
+    })
   }
-  return placeLabel(candidate, measureTextWidth, LABEL_SIZE, sigma.getDimensions())
+
+  // Every cluster's top 2 papers always outrank the rest, so the default
+  // (uncrowded) view fills at least 2 labels per cluster before any
+  // cluster gets a 3rd — see labelPriority.
+  const candidates = buildLabelCandidates(sigma, graph, graph.nodes(), (attrs) =>
+    labelPriority(attrs.clusterTopRank, attrs.citations),
+  )
+  const maxLabels = labelCapForZoom(sigma.getCamera().ratio, MIN_CAMERA_RATIO)
+
+  if (focus.selectedId && graph.hasNode(focus.selectedId)) {
+    return selectLabelsWithFocus(focus.selectedId, candidates, measureTextWidth, LABEL_SIZE, { maxLabels, viewport })
+  }
+
+  return selectNonOverlappingLabels(candidates, measureTextWidth, LABEL_SIZE, { maxLabels, viewport })
 }
 
 /** Fits the camera to the graph's bounding box, with a small margin. */
@@ -172,10 +198,22 @@ export function NetworkGraph({
   const containerRef = useRef<HTMLDivElement>(null)
   const sigmaRef = useRef<NetworkSigma | null>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
-  // Which nodes currently get a label, recomputed on every camera change —
-  // read by the nodeReducer below (a ref so recomputing never has to wait
-  // on/trigger a React re-render just to reach the reducer).
-  const visibleLabelsRef = useRef<Map<string, LabelPlacement>>(new Map())
+  // Mirrors hoveredNodeId/selectedNodeId, but readable synchronously — by
+  // the Sigma event handlers below, and by the resize observer — without
+  // waiting for a React re-render, so a recompute triggered from outside
+  // React always sees the current focus, never a stale one.
+  const hoveredNodeIdRef = useRef<string | null>(null)
+  const selectedNodeIdRef = useRef<string | null>(selectedNodeId)
+  // Which nodes currently get a label, and where — the one label-placement
+  // routine's last result (computeLabelPlacements), read by the nodeReducer
+  // below. A ref so recomputing never has to wait on/trigger a React
+  // re-render just to reach the reducer.
+  const labelPlacementsRef = useRef<Map<string, LabelPlacement>>(new Map())
+  // Holds the current recomputeLabels closure (defined inside the effect
+  // below, rebuilt whenever the Sigma instance is) so effects that don't
+  // own that closure — the selectedNodeId watcher below — can still
+  // trigger it.
+  const recomputeLabelsRef = useRef<(() => void) | null>(null)
 
   const graph = useMemo(() => buildDisplayGraph(network), [network])
 
@@ -185,6 +223,11 @@ export function NetworkGraph({
     const container = containerRef.current
     if (!container) return
 
+    // A hover carried over from the previous graph (e.g. switching
+    // networks) would refer to a node that may not exist here.
+    hoveredNodeIdRef.current = null
+    setHoveredNodeId(null)
+
     const sigma = new Sigma<DisplayNodeAttributes, DisplayEdgeAttributes>(graph, container, {
       minCameraRatio: MIN_CAMERA_RATIO,
       maxCameraRatio: MAX_CAMERA_RATIO,
@@ -193,56 +236,96 @@ export function NetworkGraph({
       labelGridCellSize: 250,
       labelRenderedSizeThreshold: 4,
       defaultDrawNodeLabel: drawNodeLabelWithHalo,
+      // Sigma has its own built-in "hovered node" rendering, entirely
+      // independent of our nodeReducer/defaultDrawNodeLabel above — it
+      // tracks hover internally and, by default, draws that node's label
+      // a SECOND time (always to the right, ignoring any flip) on a
+      // separate layer on top of everything. Since we already render the
+      // hovered node's label ourselves — correctly placed, exactly once,
+      // via forceLabel — silence this second pass entirely, or every
+      // hover shows two overlapping copies of the same label.
+      defaultDrawNodeHover: () => {},
       defaultEdgeColor: 'rgba(100, 116, 139, 0.25)',
     })
     sigmaRef.current = sigma
     fitView(sigma)
     onSigmaReady?.(sigma)
 
-    // Labels depend on screen-space positions, so every pan/zoom needs a
-    // fresh collision pass — rAF-throttled since the camera can emit many
-    // 'updated' events per second during a drag or scroll-zoom.
+    // The one label-placement routine, re-run whenever anything it depends
+    // on changes: screen-space positions (pan/zoom, canvas resize) or focus
+    // (hover/selection) — see computeLabelPlacements.
+    function recomputeLabels() {
+      labelPlacementsRef.current = computeLabelPlacements(sigma, graph, {
+        hoveredId: hoveredNodeIdRef.current,
+        selectedId: selectedNodeIdRef.current,
+      })
+      sigma.refresh()
+    }
+    recomputeLabelsRef.current = recomputeLabels
+
+    // rAF-throttled since the camera can emit many 'updated' events per
+    // second during a drag or scroll-zoom.
     let recomputeScheduled = false
     function scheduleLabelRecompute() {
       if (recomputeScheduled) return
       recomputeScheduled = true
       requestAnimationFrame(() => {
         recomputeScheduled = false
-        visibleLabelsRef.current = computeVisibleLabels(sigma, graph)
-        sigma.refresh()
+        recomputeLabels()
       })
     }
     sigma.getCamera().on('updated', scheduleLabelRecompute)
     // Populated synchronously (not through the throttled path above) so
     // the very first paint already has the right labels, no flash.
-    visibleLabelsRef.current = computeVisibleLabels(sigma, graph)
+    recomputeLabels()
 
     sigma.on('clickNode', ({ node }) => onSelectNode(node))
     sigma.on('clickStage', () => onSelectNode(null))
-    sigma.on('enterNode', ({ node }) => setHoveredNodeId(node))
-    sigma.on('leaveNode', () => setHoveredNodeId(null))
+    sigma.on('enterNode', ({ node }) => {
+      hoveredNodeIdRef.current = node
+      setHoveredNodeId(node)
+      // Not throttled (unlike scheduleLabelRecompute): hover starts/ends
+      // once per gesture, not many times a frame, and should feel instant.
+      recomputeLabels()
+    })
+    sigma.on('leaveNode', () => {
+      hoveredNodeIdRef.current = null
+      setHoveredNodeId(null)
+      recomputeLabels()
+    })
 
     // Keep the graph framed (and re-fit) whenever the container resizes —
     // a window/orientation change, or the side panel opening/closing. A
-    // resize can change screen-space label positions even when the camera's
-    // own state doesn't, so recompute explicitly rather than relying only
-    // on the 'updated' listener above.
+    // resize changes screen-space label positions and the viewport bounds
+    // labels are clipped against, even when the camera's own state
+    // doesn't, so recompute explicitly rather than relying only on the
+    // 'updated' listener above.
     const resizeObserver = new ResizeObserver(() => {
       sigma.resize()
       fitView(sigma)
-      scheduleLabelRecompute()
+      recomputeLabels()
     })
     resizeObserver.observe(container)
 
     return () => {
       resizeObserver.disconnect()
       sigma.getCamera().removeListener('updated', scheduleLabelRecompute)
+      recomputeLabelsRef.current = null
       sigma.kill()
       sigmaRef.current = null
       onSigmaReady?.(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph])
+
+  // The selected node is a prop, not a Sigma-internal event — keep the ref
+  // in sync and re-run the one label-placement routine whenever it changes,
+  // so a newly-selected node's label is placed immediately rather than
+  // waiting for the next camera/hover-triggered recompute.
+  useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId
+    recomputeLabelsRef.current?.()
+  }, [selectedNodeId])
 
   // Update the highlight/dim/filter reducers whenever interaction state
   // changes, without rebuilding the graph or the Sigma instance.
@@ -260,27 +343,26 @@ export function NetworkGraph({
       if (hoveredNodeId) {
         const isFocused = node === hoveredNodeId || (neighbors?.has(node) ?? false)
         if (!isFocused) return { ...data, color: DIMMED_COLOR, label: null, zIndex: 0 }
-        // The hovered node itself always shows its label, on top of
-        // everything else — its neighbors are only highlighted, not labeled.
-        if (node === hoveredNodeId) {
-          const placement = visibleLabelsRef.current.get(node) ?? computeSingleLabelPlacement(sigma, data)
-          return { ...data, zIndex: 2, forceLabel: true, labelSide: placement.side, labelDy: placement.dy }
-        }
-        return { ...data, zIndex: 1 }
-      }
-      if (selectedClusterId !== null && data.cluster !== selectedClusterId) {
+      } else if (selectedClusterId !== null && data.cluster !== selectedClusterId) {
         return { ...data, color: DIMMED_COLOR, label: null }
       }
-      if (node === selectedNodeId) {
-        const placement = visibleLabelsRef.current.get(node) ?? computeSingleLabelPlacement(sigma, data)
+
+      // The focused node (hovered, or else selected) always shows its
+      // label, on top of everything else, exactly once — see
+      // computeLabelPlacements/selectLabelsWithFocus. Everything else
+      // (neighbors while hovering, or any other visible node otherwise)
+      // is labeled only if that same pass picked it, so nothing overlaps
+      // the focused label or each other.
+      const placement = labelPlacementsRef.current.get(node)
+      const isFocusNode = node === (hoveredNodeId ?? selectedNodeId)
+      if (isFocusNode) {
+        if (!placement) return { ...data, zIndex: 2 }
         return { ...data, zIndex: 2, forceLabel: true, labelSide: placement.side, labelDy: placement.dy }
       }
-      // Default (resting) state: only nodes the last collision pass picked
-      // get a label — see computeVisibleLabels/labelCollision.ts. Forced
-      // since we've already decided this exact label shouldn't be hidden
-      // by Sigma's own density heuristic. labelSide/labelDy tell the draw
-      // callback exactly where that pass placed it (see drawNodeLabelWithHalo).
-      const placement = visibleLabelsRef.current.get(node)
+      if (hoveredNodeId) {
+        if (!placement) return { ...data, zIndex: 1, label: null }
+        return { ...data, zIndex: 1, forceLabel: true, labelSide: placement.side, labelDy: placement.dy }
+      }
       if (!placement) return { ...data, label: null }
       return { ...data, forceLabel: true, labelSide: placement.side, labelDy: placement.dy }
     })

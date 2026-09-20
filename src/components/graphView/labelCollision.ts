@@ -105,6 +105,29 @@ function tryPlace(
 
 /**
  * Same as tryPlace, but for a label that must always be shown regardless of
+ * fit (the hovered node, or the selected node — see NetworkGraph.tsx) —
+ * picks whichever side overflows the canvas least instead of ever
+ * returning `null`. Returns the box too (unlike the public placeLabel
+ * below) so selectHoverLabels can seed collision detection with it.
+ */
+function placeNeverDrop(
+  candidate: LabelCandidate,
+  fontSize: number,
+  textWidth: number,
+  viewport: Viewport | undefined,
+): Placement {
+  const placed = tryPlace(candidate, fontSize, textWidth, viewport)
+  if (placed) return placed
+
+  // Neither side fits cleanly — still show it, preferring the side that overflows less.
+  const right = rightBox(candidate, fontSize, textWidth)
+  const left = leftBox(candidate, fontSize, textWidth)
+  const overflow = (box: Box) => Math.max(0, -box.x) + Math.max(0, box.x + box.width - (viewport?.width ?? Infinity))
+  return overflow(right) <= overflow(left) ? { box: right, side: 'right', dy: 0 } : { box: left, side: 'left', dy: 0 }
+}
+
+/**
+ * Same as tryPlace, but for a label that must always be shown regardless of
  * fit (the hovered/selected node — see NetworkGraph.tsx) — picks whichever
  * side overflows the canvas least instead of ever returning `null`.
  */
@@ -115,14 +138,8 @@ export function placeLabel(
   viewport?: Viewport,
 ): LabelPlacement {
   const textWidth = measureTextWidth(candidate.text, fontSize)
-  const placed = tryPlace(candidate, fontSize, textWidth, viewport)
-  if (placed) return { side: placed.side, dy: placed.dy }
-
-  // Neither side fits cleanly — still show it, preferring the side that overflows less.
-  const right = rightBox(candidate, fontSize, textWidth)
-  const left = leftBox(candidate, fontSize, textWidth)
-  const overflow = (box: Box) => Math.max(0, -box.x) + Math.max(0, box.x + box.width - (viewport?.width ?? Infinity))
-  return overflow(right) <= overflow(left) ? { side: 'right', dy: 0 } : { side: 'left', dy: 0 }
+  const { side, dy } = placeNeverDrop(candidate, fontSize, textWidth, viewport)
+  return { side, dy }
 }
 
 export interface SelectLabelsOptions {
@@ -171,6 +188,66 @@ export function selectNonOverlappingLabels(
   }
 
   return selected
+}
+
+/**
+ * Same collision/edge-clipping rules as selectNonOverlappingLabels, but
+ * with one candidate — the hovered node, or, if nothing's hovered, the
+ * selected node (see NetworkGraph.tsx) — guaranteed a label, drawn on top,
+ * never dropped for the cap, an overlap, or clipping (same never-drop
+ * behavior as placeLabel). Every other candidate competes for the
+ * remaining `maxLabels` slots by priority, never overlapping the focused
+ * label or each other, and can still be flipped or dropped at the canvas
+ * edge like any other label. This is the one routine both the resting
+ * state's "selected but not hovered" case and the hover-scoped case route
+ * through, so a focused node's label is drawn exactly once, consistently,
+ * in every state.
+ */
+export function selectLabelsWithFocus(
+  focusId: string,
+  candidates: LabelCandidate[],
+  measureTextWidth: (text: string, fontSize: number) => number,
+  fontSize: number,
+  options: SelectLabelsOptions = {},
+): Map<string, LabelPlacement> {
+  const { maxLabels = Infinity, viewport } = options
+  const selected = new Map<string, LabelPlacement>()
+  const placedBoxes: Box[] = []
+
+  const focused = candidates.find((c) => c.id === focusId)
+  if (focused) {
+    const placement = placeNeverDrop(focused, fontSize, measureTextWidth(focused.text, fontSize), viewport)
+    selected.set(focused.id, { side: placement.side, dy: placement.dy })
+    placedBoxes.push(placement.box)
+  }
+
+  const others = [...candidates].filter((c) => c.id !== focusId).sort((a, b) => b.priority - a.priority)
+  for (const candidate of others) {
+    if (selected.size >= maxLabels) break
+    const placement = tryPlace(candidate, fontSize, measureTextWidth(candidate.text, fontSize), viewport)
+    if (!placement) continue
+    if (placedBoxes.some((box) => boxesOverlap(box, placement.box))) continue
+    placedBoxes.push(placement.box)
+    selected.set(candidate.id, { side: placement.side, dy: placement.dy })
+  }
+
+  return selected
+}
+
+const CLUSTER_TOP_TIER_BONUS = 1e9
+
+/**
+ * Priority for a label candidate. `clusterTopRank` is 0 for a cluster's
+ * single highest-citationRank paper, 1 for its second, -1 for anything
+ * else (see buildDisplayGraph.ts) — every cluster's rank-0 candidates
+ * outrank every cluster's rank-1 candidates, which in turn outrank
+ * everything else, so `selectNonOverlappingLabels` fills at least 2 labels
+ * per cluster (when they fit) before giving any cluster a 3rd. Within a
+ * tier, or outside all tiers, citation rank breaks ties.
+ */
+export function labelPriority(clusterTopRank: number, citations: number): number {
+  if (clusterTopRank < 0) return citations
+  return (2 - clusterTopRank) * CLUSTER_TOP_TIER_BONUS + citations
 }
 
 const DEFAULT_LABEL_CAP = 10

@@ -72,7 +72,7 @@ describe('buildDisplayGraph', () => {
     expect(graph.getNodeAttribute('ghost', 'forceLabel')).toBe(false)
   })
 
-  it('flags every cluster\'s top paper as isClusterTop, uncapped (unlike forceLabel)', () => {
+  it('flags every cluster\'s top paper as clusterTopRank 0, uncapped (unlike forceLabel)', () => {
     const clusters = Array.from({ length: MAX_FORCED_LABELS + 3 }, (_, i) =>
       cluster({ cluster: i + 1, topPapers: [{ id: `top${i}`, title: `Top ${i}`, citations: 1 }] }),
     )
@@ -81,19 +81,38 @@ describe('buildDisplayGraph', () => {
 
     // Every cluster's top paper is flagged, even past the forceLabel cap.
     for (const n of nodes) {
-      expect(graph.getNodeAttribute(n.id, 'isClusterTop')).toBe(true)
+      expect(graph.getNodeAttribute(n.id, 'clusterTopRank')).toBe(0)
     }
     expect(graph.getNodeAttribute(`top${MAX_FORCED_LABELS + 2}`, 'forceLabel')).toBe(false)
   })
 
-  it('flags a non-top-paper node as isClusterTop: false', () => {
+  it("flags a cluster's second-highest paper as clusterTopRank 1, so every cluster gets at least 2 labels", () => {
+    const clusters = [
+      cluster({
+        cluster: 1,
+        topPapers: [
+          { id: 'top', title: 'Top', citations: 10 },
+          { id: 'second', title: 'Second', citations: 5 },
+          { id: 'third', title: 'Third', citations: 1 },
+        ],
+      }),
+    ]
+    const nodes = [node({ id: 'top' }), node({ id: 'second' }), node({ id: 'third' })]
+    const graph = buildDisplayGraph({ nodes, edges: [], clusters })
+
+    expect(graph.getNodeAttribute('top', 'clusterTopRank')).toBe(0)
+    expect(graph.getNodeAttribute('second', 'clusterTopRank')).toBe(1)
+    expect(graph.getNodeAttribute('third', 'clusterTopRank')).toBe(-1)
+  })
+
+  it('flags a non-top-paper node as clusterTopRank -1', () => {
     const clusters = [
       cluster({ cluster: 1, topPapers: [{ id: 'top', title: 'Top', citations: 5 }] }),
     ]
     const nodes = [node({ id: 'top' }), node({ id: 'other' })]
     const graph = buildDisplayGraph({ nodes, edges: [], clusters })
 
-    expect(graph.getNodeAttribute('other', 'isClusterTop')).toBe(false)
+    expect(graph.getNodeAttribute('other', 'clusterTopRank')).toBe(-1)
   })
 
   it('drops edges that reference a node outside the network (defensive)', () => {

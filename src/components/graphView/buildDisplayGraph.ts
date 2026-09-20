@@ -19,8 +19,14 @@ export interface DisplayNodeAttributes {
   forceLabel: boolean
   cluster: number
   citations: number
-  /** True if this is its cluster's top (highest-citationRank) paper — see labelCollision's priority tiering. */
-  isClusterTop: boolean
+  /**
+   * This node's rank among its cluster's top papers: 0 for the cluster's
+   * single highest-citationRank paper, 1 for its second, -1 if it's not
+   * one of the cluster's top 2 — see labelCollision's priority tiering,
+   * which guarantees both a cluster's rank-0 and rank-1 papers a label
+   * before any other node gets a second label from the same cluster.
+   */
+  clusterTopRank: number
   /**
    * Which side of the node to draw its label on, and any vertical nudge —
    * set per-frame by NetworkGraph's nodeReducer (from labelCollision's
@@ -60,12 +66,16 @@ export function buildDisplayGraph(network: NetworkResult): DisplayGraph {
       .filter((id): id is string => Boolean(id)),
   )
 
-  // Every cluster's top paper (uncapped, unlike forcedLabelIds above) — the
-  // live map's on-screen label selection always prioritizes these first,
-  // see computeVisibleLabels in NetworkGraph.tsx.
-  const clusterTopIds = new Set(
-    network.clusters.map((cluster) => cluster.topPapers[0]?.id).filter((id): id is string => Boolean(id)),
-  )
+  // Every cluster's top 2 papers (uncapped, unlike forcedLabelIds above) —
+  // the live map's on-screen label selection always prioritizes these
+  // first, so every cluster gets at least 2 labels before any cluster gets
+  // a 3rd — see computeVisibleLabels in NetworkGraph.tsx.
+  const clusterTopRankById = new Map<string, number>()
+  for (const cluster of network.clusters) {
+    cluster.topPapers.slice(0, 2).forEach((paper, rank) => {
+      clusterTopRankById.set(paper.id, rank)
+    })
+  }
 
   for (const node of network.nodes) {
     const rank = citationRank(node)
@@ -79,7 +89,7 @@ export function buildDisplayGraph(network: NetworkResult): DisplayGraph {
       forceLabel: node.resolved !== false && forcedLabelIds.has(node.id),
       cluster: node.cluster,
       citations: rank,
-      isClusterTop: clusterTopIds.has(node.id),
+      clusterTopRank: clusterTopRankById.get(node.id) ?? -1,
     })
   }
 

@@ -72,6 +72,30 @@ describe('buildDisplayGraph', () => {
     expect(graph.getNodeAttribute('ghost', 'forceLabel')).toBe(false)
   })
 
+  it('flags every cluster\'s top paper as isClusterTop, uncapped (unlike forceLabel)', () => {
+    const clusters = Array.from({ length: MAX_FORCED_LABELS + 3 }, (_, i) =>
+      cluster({ cluster: i + 1, topPapers: [{ id: `top${i}`, title: `Top ${i}`, citations: 1 }] }),
+    )
+    const nodes = clusters.map((c) => node({ id: c.topPapers[0].id, label: c.topPapers[0].title }))
+    const graph = buildDisplayGraph({ nodes, edges: [], clusters })
+
+    // Every cluster's top paper is flagged, even past the forceLabel cap.
+    for (const n of nodes) {
+      expect(graph.getNodeAttribute(n.id, 'isClusterTop')).toBe(true)
+    }
+    expect(graph.getNodeAttribute(`top${MAX_FORCED_LABELS + 2}`, 'forceLabel')).toBe(false)
+  })
+
+  it('flags a non-top-paper node as isClusterTop: false', () => {
+    const clusters = [
+      cluster({ cluster: 1, topPapers: [{ id: 'top', title: 'Top', citations: 5 }] }),
+    ]
+    const nodes = [node({ id: 'top' }), node({ id: 'other' })]
+    const graph = buildDisplayGraph({ nodes, edges: [], clusters })
+
+    expect(graph.getNodeAttribute('other', 'isClusterTop')).toBe(false)
+  })
+
   it('drops edges that reference a node outside the network (defensive)', () => {
     const network: NetworkResult = {
       nodes: [node({ id: 'A' }), node({ id: 'B' })],

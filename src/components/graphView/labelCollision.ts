@@ -22,11 +22,17 @@ interface Box {
   height: number
 }
 
+export interface Viewport {
+  width: number
+  height: number
+}
+
 function boxesOverlap(a: Box, b: Box): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
 }
 
-function candidateBox(candidate: LabelCandidate, fontSize: number, textWidth: number): Box {
+/** Label box anchored to the right of the node — the default placement. */
+function rightBox(candidate: LabelCandidate, fontSize: number, textWidth: number): Box {
   return {
     x: candidate.x + candidate.radius + 3,
     y: candidate.y - fontSize,
@@ -35,29 +41,158 @@ function candidateBox(candidate: LabelCandidate, fontSize: number, textWidth: nu
   }
 }
 
+/** Same box, flipped to the node's left — the fallback when the right side is clipped. */
+function leftBox(candidate: LabelCandidate, fontSize: number, textWidth: number): Box {
+  return {
+    x: candidate.x - candidate.radius - 3 - textWidth,
+    y: candidate.y - fontSize,
+    width: textWidth,
+    height: fontSize * 1.3,
+  }
+}
+
+function fitsHorizontally(box: Box, viewport: Viewport): boolean {
+  return box.x >= 0 && box.x + box.width <= viewport.width
+}
+
+/** Nudges a box that would clip the top/bottom edge back into view, without changing its horizontal position. */
+function clampVertical(box: Box, viewport: Viewport): Box {
+  if (box.height >= viewport.height) return box
+  return { ...box, y: Math.min(Math.max(box.y, 0), viewport.height - box.height) }
+}
+
+/**
+ * Where a label actually gets drawn, relative to its node: which side, and
+ * how far its natural vertical anchor was nudged to stay in view (0 if it
+ * wasn't). The caller (NetworkGraph's draw callback) needs this — not just
+ * whether the label is shown — so the canvas drawing matches the placement
+ * this module decided on, rather than always drawing to the node's right.
+ */
+export interface LabelPlacement {
+  side: 'left' | 'right'
+  dy: number
+}
+
+interface Placement extends LabelPlacement {
+  box: Box
+}
+
+/**
+ * Tries the node's right side first, then its left, returning `null` if the
+ * label fits on neither (used by selection, which is allowed to drop a
+ * label). With no `viewport` (e.g. in tests that don't care about canvas
+ * bounds), the label is always placed to the right.
+ */
+function tryPlace(
+  candidate: LabelCandidate,
+  fontSize: number,
+  textWidth: number,
+  viewport: Viewport | undefined,
+): Placement | null {
+  const right = rightBox(candidate, fontSize, textWidth)
+  if (!viewport) return { box: right, side: 'right', dy: 0 }
+  if (fitsHorizontally(right, viewport)) {
+    const clamped = clampVertical(right, viewport)
+    return { box: clamped, side: 'right', dy: clamped.y - right.y }
+  }
+  const left = leftBox(candidate, fontSize, textWidth)
+  if (fitsHorizontally(left, viewport)) {
+    const clamped = clampVertical(left, viewport)
+    return { box: clamped, side: 'left', dy: clamped.y - left.y }
+  }
+  return null
+}
+
+/**
+ * Same as tryPlace, but for a label that must always be shown regardless of
+ * fit (the hovered/selected node — see NetworkGraph.tsx) — picks whichever
+ * side overflows the canvas least instead of ever returning `null`.
+ */
+export function placeLabel(
+  candidate: LabelCandidate,
+  measureTextWidth: (text: string, fontSize: number) => number,
+  fontSize: number,
+  viewport?: Viewport,
+): LabelPlacement {
+  const textWidth = measureTextWidth(candidate.text, fontSize)
+  const placed = tryPlace(candidate, fontSize, textWidth, viewport)
+  if (placed) return { side: placed.side, dy: placed.dy }
+
+  // Neither side fits cleanly — still show it, preferring the side that overflows less.
+  const right = rightBox(candidate, fontSize, textWidth)
+  const left = leftBox(candidate, fontSize, textWidth)
+  const overflow = (box: Box) => Math.max(0, -box.x) + Math.max(0, box.x + box.width - (viewport?.width ?? Infinity))
+  return overflow(right) <= overflow(left) ? { side: 'right', dy: 0 } : { side: 'left', dy: 0 }
+}
+
+export interface SelectLabelsOptions {
+  /** Never select more than this many labels, even if more would fit without overlapping. */
+  maxLabels?: number
+  /**
+   * Canvas dimensions, in the same screen-space pixels as the candidates'
+   * x/y. When given, a label that would be cut off by either edge is
+   * flipped to the node's other side, or dropped if it doesn't fit on
+   * either side — see tryPlace.
+   */
+  viewport?: Viewport
+}
+
 /**
  * Greedily keeps the highest-priority label at each screen position,
  * dropping any candidate whose bounding box would overlap one already
- * kept — so, at any given zoom, no two visible labels overlap. Since the
- * candidates carry screen-space (not graph-space) coordinates, zooming in
- * spreads nodes apart on screen and naturally lets more labels through
- * without any change to this algorithm.
+ * kept, run off the canvas edge on both sides, or exceed `maxLabels` — so,
+ * at any given zoom, no two visible labels overlap and none are clipped.
+ * Since the candidates carry screen-space (not graph-space) coordinates,
+ * zooming in spreads nodes apart on screen and naturally lets more labels
+ * through without any change to this algorithm.
+ *
+ * Returns each selected label's actual placement (which side of the node,
+ * and any vertical nudge) — not just whether it's shown — so the caller's
+ * draw code can render it exactly where this module decided it should go.
  */
 export function selectNonOverlappingLabels(
   candidates: LabelCandidate[],
   measureTextWidth: (text: string, fontSize: number) => number,
   fontSize: number,
-): Set<string> {
+  options: SelectLabelsOptions = {},
+): Map<string, LabelPlacement> {
+  const { maxLabels = Infinity, viewport } = options
   const sorted = [...candidates].sort((a, b) => b.priority - a.priority)
   const placedBoxes: Box[] = []
-  const selected = new Set<string>()
+  const selected = new Map<string, LabelPlacement>()
 
   for (const candidate of sorted) {
-    const box = candidateBox(candidate, fontSize, measureTextWidth(candidate.text, fontSize))
-    if (placedBoxes.some((placed) => boxesOverlap(placed, box))) continue
-    placedBoxes.push(box)
-    selected.add(candidate.id)
+    if (selected.size >= maxLabels) break
+    const placement = tryPlace(candidate, fontSize, measureTextWidth(candidate.text, fontSize), viewport)
+    if (!placement) continue
+    if (placedBoxes.some((placed) => boxesOverlap(placed, placement.box))) continue
+    placedBoxes.push(placement.box)
+    selected.set(candidate.id, { side: placement.side, dy: placement.dy })
   }
 
   return selected
+}
+
+const DEFAULT_LABEL_CAP = 10
+const ZOOMED_IN_LABEL_CAP = 40
+
+/**
+ * How many labels to allow at the given camera zoom: `defaultCap` (10) at
+ * rest (`cameraRatio` at or above 1, i.e. the fitted default view) rising
+ * to `zoomedInCap` (40) as the camera approaches `minCameraRatio` (its most
+ * zoomed-in state). Interpolated on a log scale since camera ratio is
+ * itself a zoom *multiple*, not a linear distance.
+ */
+export function labelCapForZoom(
+  cameraRatio: number,
+  minCameraRatio: number,
+  options: { defaultCap?: number; zoomedInCap?: number } = {},
+): number {
+  const defaultCap = options.defaultCap ?? DEFAULT_LABEL_CAP
+  const zoomedInCap = options.zoomedInCap ?? ZOOMED_IN_LABEL_CAP
+  if (minCameraRatio >= 1) return defaultCap
+
+  const clampedRatio = Math.min(1, Math.max(minCameraRatio, cameraRatio))
+  const t = Math.log(1 / clampedRatio) / Math.log(1 / minCameraRatio)
+  return Math.round(defaultCap + t * (zoomedInCap - defaultCap))
 }

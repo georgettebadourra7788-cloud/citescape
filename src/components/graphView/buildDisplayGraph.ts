@@ -19,6 +19,16 @@ export interface DisplayNodeAttributes {
   forceLabel: boolean
   cluster: number
   citations: number
+  /** True if this is its cluster's top (highest-citationRank) paper — see labelCollision's priority tiering. */
+  isClusterTop: boolean
+  /**
+   * Which side of the node to draw its label on, and any vertical nudge —
+   * set per-frame by NetworkGraph's nodeReducer (from labelCollision's
+   * placement decision), never by buildDisplayGraph itself. Optional/absent
+   * here; drawNodeLabelWithHalo defaults to the right when unset.
+   */
+  labelSide?: 'left' | 'right'
+  labelDy?: number
 }
 
 export interface DisplayEdgeAttributes {
@@ -50,6 +60,13 @@ export function buildDisplayGraph(network: NetworkResult): DisplayGraph {
       .filter((id): id is string => Boolean(id)),
   )
 
+  // Every cluster's top paper (uncapped, unlike forcedLabelIds above) — the
+  // live map's on-screen label selection always prioritizes these first,
+  // see computeVisibleLabels in NetworkGraph.tsx.
+  const clusterTopIds = new Set(
+    network.clusters.map((cluster) => cluster.topPapers[0]?.id).filter((id): id is string => Boolean(id)),
+  )
+
   for (const node of network.nodes) {
     const rank = citationRank(node)
     graph.addNode(node.id, {
@@ -62,6 +79,7 @@ export function buildDisplayGraph(network: NetworkResult): DisplayGraph {
       forceLabel: node.resolved !== false && forcedLabelIds.has(node.id),
       cluster: node.cluster,
       citations: rank,
+      isClusterTop: clusterTopIds.has(node.id),
     })
   }
 
